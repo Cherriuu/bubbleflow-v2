@@ -174,7 +174,7 @@ class InventoryEvent(models.Model):
         related_name="inventory_events"
     )
     event_type = models.CharField(max_length=30, choices=EventType.choices)
-    quantity_delta = models.DecimalField(max_digits=12, decimal_places=3)
+    quantity_delta = models.DecimalField(max_digits=12, decimal_places=3) # how much was added or removed from the batch
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
