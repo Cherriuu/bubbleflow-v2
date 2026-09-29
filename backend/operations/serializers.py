@@ -28,6 +28,8 @@ class ShopSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "timezone",
+            "inventory_buffer_percent",
+            "low_stock_threshold_servings",
             "created_at",
             "updated_at",
         ]
@@ -56,10 +58,12 @@ class PreparedItemSerializer(serializers.ModelSerializer):
             "id",
             "shop",
             "name",
-            "unit",
-            "default_shelf_life",
+            "base_unit",
             "default_batch_quantity",
-            "usage_buffer_percentage",
+            "batch_label",
+            "quantity_per_serving",
+            "preparation_time",
+            "default_shelf_life",
             "is_active",
             "created_at",
             "updated_at",
@@ -76,6 +80,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "id",
             "prepared_item",
             "storage_location",
+            "initial_quantity",
             "status",
             "started_at",
             "ready_at",
@@ -176,6 +181,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "order_items",
         ]
 
+
 # Validate data for creating a batch
 class CreateBatchSerializer(serializers.Serializer):
     prepared_item_id = serializers.PrimaryKeyRelatedField(
@@ -186,16 +192,17 @@ class CreateBatchSerializer(serializers.Serializer):
         queryset=StorageLocation.objects.all(),
         source="storage_location"
     )
-    quantity = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=3
+    batch_fraction = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=3,
+        min_value=0.001
     )
     started_at = serializers.DateTimeField()
 
 
 # Validate data for marking a batch ready
 class MarkBatchReadySerializer(serializers.Serializer):
-    ready_at = serializers.DateTimeField()
+    pass
 
 
 # Validate waste input

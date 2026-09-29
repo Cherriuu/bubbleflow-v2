@@ -5,6 +5,12 @@ from decimal import Decimal
 class Shop(models.Model):
     name = models.CharField(max_length=120)
     timezone = models.CharField(max_length=64, default="America/New_York")
+    inventory_buffer_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("10.00")
+    )
+    low_stock_threshold_servings = models.PositiveIntegerField(default=15)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -43,16 +49,18 @@ class StorageLocation(models.Model):
 class Unit(models.TextChoices):
     MILLILITER = "ml", "Milliliter"
     GRAM = "g", "Gram"
-    SERVING = "serving", "Serving"
+    OUNCE = "oz", "Ounce"
 
 
 class PreparedItem(models.Model):
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="prepared_items")
     name = models.CharField(max_length=120)
-    unit = models.CharField(max_length=20, choices=Unit.choices)
-    default_shelf_life = models.DurationField()
+    base_unit = models.CharField(max_length=20, choices=Unit.choices)
     default_batch_quantity = models.DecimalField(max_digits=12, decimal_places=3)
-    usage_buffer_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    batch_label = models.CharField(max_length=30, default="batch")
+    quantity_per_serving = models.DecimalField(max_digits=12, decimal_places=3)
+    preparation_time = models.DurationField()
+    default_shelf_life = models.DurationField()
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -81,6 +89,7 @@ class BatchStatus(models.TextChoices):
 class Batch(models.Model):
     prepared_item = models.ForeignKey(PreparedItem, on_delete=models.PROTECT, related_name="batches")
     storage_location = models.ForeignKey(StorageLocation, on_delete=models.PROTECT, related_name="batches")
+    initial_quantity = models.DecimalField(max_digits=12, decimal_places=3)
     status = models.CharField(max_length=20, choices=BatchStatus.choices, default=BatchStatus.PREPARING)
     started_at = models.DateTimeField()
     ready_at = models.DateTimeField(null=True, blank=True)

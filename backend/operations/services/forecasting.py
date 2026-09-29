@@ -7,7 +7,7 @@ from django.db.models import Sum
 from ..models import InventoryEvent, EventType
 from .inventory import get_item_inventory
 
-# Get how much of an item was consumed recently
+
 def get_usage_history(prepared_item, hours=4):
     start_time = timezone.now() - timedelta(hours=hours)
 
@@ -22,14 +22,12 @@ def get_usage_history(prepared_item, hours=4):
     return abs(total)
 
 
-# Calculate average inventory usage per hour
 def calculate_usage_rate(prepared_item, hours=4):
     usage = get_usage_history(prepared_item, hours)
 
     return usage / Decimal(str(hours))
 
 
-# Estimate how much inventory will be needed
 def forecast_demand(prepared_item, forecast_hours=2, history_hours=4):
     usage_rate = calculate_usage_rate(
         prepared_item,
@@ -38,12 +36,14 @@ def forecast_demand(prepared_item, forecast_hours=2, history_hours=4):
 
     expected_usage = usage_rate * Decimal(str(forecast_hours))
 
-    buffer = expected_usage * prepared_item.usage_buffer_percentage
+    buffer_percent = prepared_item.shop.inventory_buffer_percent
+    buffer_multiplier = Decimal("1") + (
+        buffer_percent / Decimal("100")
+    )
 
-    return expected_usage + buffer
+    return expected_usage * buffer_multiplier
 
 
-# Calculate how much additional inventory should be prepared
 def recommend_production(prepared_item, forecast_hours=2, history_hours=4):
     forecast = forecast_demand(
         prepared_item,

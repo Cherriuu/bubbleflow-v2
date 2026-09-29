@@ -1,27 +1,45 @@
-// typescript interface for inventory row props
-interface InventoryRowProps {
+type InventoryRowProps = {
     name: string;
-    quantity: number;
-    status: string;
-    unit: string;
-}
+    estimatedServings: number;
+    status: "available" | "low" | "out";
+};
 
-function InventoryRow({ name, quantity, status, unit }: InventoryRowProps) {
+function InventoryRow({
+    name,
+    estimatedServings,
+    status,
+}: InventoryRowProps) {
+    const statusStyles = {
+        available: "bg-green-100 text-green-700",
+        low: "bg-yellow-100 text-yellow-700",
+        out: "bg-red-100 text-red-700",
+    };
+
+    const statusLabels = {
+        available: "Available",
+        low: "Low",
+        out: "Out",
+    };
+
     return (
-        <div className="grid grid-cols-[2fr_1fr_1fr] items-center rounded-2xl bg-[#dcecee] px-4 py-3">
-            <p className="text-sm font-medium text-stone-800">
+        <div className="grid grid-cols-[2fr_1fr_1fr] items-center rounded-2xl px-4 py-4 hover:bg-stone-50">
+            <p className="font-medium text-stone-800">
                 {name}
             </p>
 
-            <p className="text-center text-sm text-stone-400">
-                {quantity} {unit}
+            <p className="text-sm text-stone-600">
+                ~{estimatedServings} drinks
             </p>
 
-            <p className="text-right text-sm text-stone-400">
-                {status}
-            </p>
+            <div>
+                <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[status]}`}
+                >
+                    {statusLabels[status]}
+                </span>
+            </div>
         </div>
-    )
+    );
 }
 
-export default InventoryRow
+export default InventoryRow;

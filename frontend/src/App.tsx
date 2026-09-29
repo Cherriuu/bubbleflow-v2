@@ -1,15 +1,14 @@
 import './App.css'
-import { useState } from "react"
 import { BrowserRouter, Routes, Route} from "react-router-dom";
 import Sidebar from "./components/sidebar";
 
 /* Import the components for the different pages */
 import Inventory from "./pages/inventory"
-import { Batches } from "./pages/batches"
-import { Orders } from "./pages/orders"
-import { Production } from "./pages/production"
+import Batches from "./pages/batches"
+import Orders from "./pages/orders"
+import Production from "./pages/production"
 import About from "./pages/about"
-import { Overview } from "./pages/overview"
+import Overview from "./pages/overview"
 
 function App() {
   return (

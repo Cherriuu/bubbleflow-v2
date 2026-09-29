@@ -1,5 +1,4 @@
 from django.db import transaction
-from decimal import Decimal
 
 from ..models import (
     Order,
@@ -7,13 +6,11 @@ from ..models import (
     OrderItemTopping,
     OrderStatus,
     RecipeComponent,
-    Size,
 )
 
 from .inventory import get_item_inventory, consume_fefo
 
 
-# Create an order with customized drinks and toppings
 @transaction.atomic
 def create_order(shop, items):
     order = Order.objects.create(
@@ -40,31 +37,27 @@ def create_order(shop, items):
             ice_level=item["ice_level"]
         )
 
-        # Add each topping to the customized drink
         for topping in item.get("toppings", []):
+            prepared_item = topping["prepared_item"]
+
+            if prepared_item.shop != shop:
+                raise ValueError(
+                    "Topping must belong to the same shop."
+                )
+
             OrderItemTopping.objects.create(
                 order_item=order_item,
-                prepared_item=topping["prepared_item"],
+                prepared_item=prepared_item,
                 quantity=topping.get("quantity", 1)
             )
 
     return order
 
 
-# Calculate all inventory needed to make an order
 def calculate_order_requirements(order):
     requirements = {}
 
-    size_multipliers = {
-        Size.SMALL: Decimal("0.8"),
-        Size.MEDIUM: Decimal("1.0"),
-        Size.LARGE: Decimal("1.2")
-    }
-
     for order_item in order.order_items.all():
-        multiplier = size_multipliers[order_item.size]
-
-        # Calculate ingredients from the drink recipe
         components = RecipeComponent.objects.filter(
             menu_item=order_item.menu_item
         )
@@ -75,7 +68,6 @@ def calculate_order_requirements(order):
             required_quantity = (
                 component.quantity
                 * order_item.quantity
-                * multiplier
             )
 
             if prepared_item in requirements:
@@ -83,21 +75,23 @@ def calculate_order_requirements(order):
             else:
                 requirements[prepared_item] = required_quantity
 
-        # Add toppings to inventory requirements
         for topping in order_item.toppings.all():
+            prepared_item = topping.prepared_item
+
             required_quantity = (
-                topping.quantity * order_item.quantity
+                topping.quantity
+                * prepared_item.quantity_per_serving
+                * order_item.quantity
             )
 
-            if topping.prepared_item in requirements:
-                requirements[topping.prepared_item] += required_quantity
+            if prepared_item in requirements:
+                requirements[prepared_item] += required_quantity
             else:
-                requirements[topping.prepared_item] = required_quantity
+                requirements[prepared_item] = required_quantity
 
     return requirements
 
 
-# Check whether the order can currently be fulfilled
 def check_order_inventory(order):
     requirements = calculate_order_requirements(order)
 
@@ -110,7 +104,6 @@ def check_order_inventory(order):
     return True
 
 
-# Complete the order and deduct inventory using FEFO
 @transaction.atomic
 def complete_order(order):
     if order.status != OrderStatus.PENDING:
@@ -118,7 +111,6 @@ def complete_order(order):
 
     requirements = calculate_order_requirements(order)
 
-    # Make sure every ingredient is available first
     for prepared_item, required_quantity in requirements.items():
         available = get_item_inventory(prepared_item)
 
@@ -127,7 +119,6 @@ def complete_order(order):
                 f"Insufficient inventory for {prepared_item.name}."
             )
 
-    # Deduct each ingredient from earliest-expiring batches
     for prepared_item, required_quantity in requirements.items():
         consume_fefo(
             prepared_item,
@@ -140,7 +131,6 @@ def complete_order(order):
     return order
 
 
-# Cancel an order that has not been completed
 def cancel_order(order):
     if order.status != OrderStatus.PENDING:
         raise ValueError("Only pending orders can be cancelled.")

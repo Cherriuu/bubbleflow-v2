@@ -1,3 +1,23 @@
 from django.contrib import admin
 
-# Wont be using for right now, but may be used for admin panel in the future.
+from .models import (
+    Shop,
+    StorageLocation,
+    PreparedItem,
+    Batch,
+    InventoryEvent,
+    MenuItem,
+    RecipeComponent,
+    Order,
+    OrderItem,
+)
+
+admin.site.register(Shop)
+admin.site.register(StorageLocation)
+admin.site.register(PreparedItem)
+admin.site.register(Batch)
+admin.site.register(InventoryEvent)
+admin.site.register(MenuItem)
+admin.site.register(RecipeComponent)
+admin.site.register(Order)
+admin.site.register(OrderItem)

@@ -29,6 +29,8 @@ from .serializers import (
 from .services.inventory import (
     create_batch,
     get_item_inventory,
+    get_estimated_servings,
+    get_inventory_status,
     record_waste,
     record_correction,
     mark_batch_ready,
@@ -136,7 +138,7 @@ def create_batch_view(request):
         batch = create_batch(
             prepared_item=data["prepared_item"],
             storage_location=data["storage_location"],
-            quantity=data["quantity"],
+            batch_fraction=data["batch_fraction"],
             started_at=data["started_at"]
         )
 
@@ -173,13 +175,8 @@ def mark_batch_ready_view(request, batch_id):
         raise_exception=True
     )
 
-    ready_at = input_serializer.validated_data["ready_at"]
-
     try:
-        batch = mark_batch_ready(
-            batch,
-            ready_at
-        )
+        batch = mark_batch_ready(batch)
 
     except ValueError as error:
         return Response(
@@ -352,12 +349,16 @@ def inventory_summary_view(request):
 
     for item in items:
         balance = get_item_inventory(item)
+        estimated_servings = get_estimated_servings(item)
+        inventory_status = get_inventory_status(item)
 
         inventory.append({
             "id": item.id,
             "name": item.name,
-            "unit": item.unit,
-            "inventory": balance
+            "base_unit": item.base_unit,
+            "inventory": balance,
+            "estimated_servings": estimated_servings,
+            "status": inventory_status
         })
 
     return Response(inventory)
@@ -378,7 +379,7 @@ def recommendations_view(request):
         recommendations.append({
             "id": item.id,
             "name": item.name,
-            "unit": item.unit,
+            "base_unit": item.base_unit,
             "recommended_quantity": recommendation
         })
 
