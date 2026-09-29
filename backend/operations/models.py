@@ -1,3 +1,4 @@
+# This file defines the database models for the operations app.
 from django.db import models
 from decimal import Decimal
 
@@ -153,15 +154,79 @@ class Order(models.Model):
     def __str__(self):
         return f"Order #{self.pk} - {self.status}"
 
+class Size(models.TextChoices):
+    SMALL = "small", "Small"
+    MEDIUM = "medium", "Medium"
+    LARGE = "large", "Large"
+
+
+class SugarLevel(models.TextChoices):
+    ZERO = "0", "0%"
+    TWENTY_FIVE = "25", "25%"
+    FIFTY = "50", "50%"
+    SEVENTY_FIVE = "75", "75%"
+    ONE_HUNDRED = "100", "100%"
+
+
+class IceLevel(models.TextChoices):
+    NO_ICE = "no_ice", "No Ice"
+    LESS_ICE = "less_ice", "Less Ice"
+    REGULAR_ICE = "regular_ice", "Regular Ice"
+    EXTRA_ICE = "extra_ice", "Extra Ice"
+
 
 # drinks are allowed to exist as separate rows
 class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
-    menu_item = models.ForeignKey(MenuItem, on_delete=models.PROTECT, related_name="order_items")
-    quantity = models.PositiveIntegerField()
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="order_items"
+    )
+    menu_item = models.ForeignKey(
+        MenuItem,
+        on_delete=models.PROTECT,
+        related_name="order_items"
+    )
+    quantity = models.PositiveIntegerField(default=1)
+
+    size = models.CharField(
+        max_length=10,
+        choices=Size.choices,
+        default=Size.MEDIUM
+    )
+    sugar_level = models.CharField(
+        max_length=3,
+        choices=SugarLevel.choices,
+        default=SugarLevel.ONE_HUNDRED
+    )
+    ice_level = models.CharField(
+        max_length=20,
+        choices=IceLevel.choices,
+        default=IceLevel.REGULAR_ICE
+    )
 
     def __str__(self):
-        return f"Order #{self.order_id} - {self.quantity}x {self.menu_item.name}"
+        return f"{self.quantity}x {self.menu_item.name}"
+
+class OrderItemTopping(models.Model):
+    order_item = models.ForeignKey(
+        OrderItem,
+        on_delete=models.CASCADE,
+        related_name="toppings"
+    )
+    prepared_item = models.ForeignKey(
+        PreparedItem,
+        on_delete=models.PROTECT,
+        related_name="order_item_toppings"
+    )
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=1
+    )
+
+    def __str__(self):
+        return f"{self.order_item} - {self.prepared_item.name}"
 
 
 class InventoryEvent(models.Model):

@@ -1,6 +1,6 @@
 from django.db import transaction
 from django.db.models import Sum
-from ..models import Batch, BatchStatus, InventoryEvent, EventType
+from ..models import Batch, BatchStatus, InventoryEvent, EventType, PreparedItem
 
 
 # Create a batch and record its starting inventory
@@ -158,3 +158,35 @@ def consume_fefo(prepared_item, quantity):
 
     # Rolls back all consumption if there was not enough inventory
     raise ValueError("Insufficient inventory.")
+
+def mark_batch_ready(batch, ready_at):
+    if batch.status != BatchStatus.PREPARING:
+        raise ValueError(
+            "Only preparing batches can be marked ready."
+        )
+
+    batch.status = BatchStatus.READY
+    batch.ready_at = ready_at
+    batch.save()
+
+    return batch
+
+def inventory_summary_view():
+    prepared_items = PreparedItem.objects.all()
+    summary =[]
+
+    for item in prepared_items:
+        quantity = get_item_inventory(item)
+        id = item.id
+        name = item.name
+        unit = item.unit
+
+        
+        summary.append({
+            "id": id,
+            "name": name,
+            "quantity": quantity,
+            "unit": unit
+        })
+
+    return summary
