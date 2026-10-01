@@ -32,11 +32,18 @@ type MenuItem = {
     is_active: boolean;
 };
 
+type PreparedItem = {
+    id: number;
+    shop: number;
+    name: string;
+};
+
 {/* Pull data from the backend */}
 
 function Orders() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+    const [preparedItems, setPreparedItems] = useState<PreparedItem[]>([]);
 
     const [newOrder, setNewOrder] = useState<number | null>(null);
 
@@ -77,16 +84,50 @@ function Orders() {
         getMenuItems();
     }, []);
 
+    useEffect(() => {
+        async function getPreparedItems() {
+            const response = await fetch(
+                "http://localhost:8000/api/prepared-items/"
+            );
+
+            const data = await response.json();
+            setPreparedItems(data);
+        }
+
+        getPreparedItems();
+    }, []);
+
     async function createOrder() {
         if (newOrder === null) {
-            console.error("No drink selected for the new order.");
+            alert("Please select a drink.");
             return;
         }
 
-        const selectedMenuItem = menuItems.find(item => item.id === newOrder);
+        const selectedMenuItem = menuItems.find(
+            item => item.id === newOrder
+        );
+
         if (!selectedMenuItem) {
-            console.error("Selected drink not found in menu items.");
+            alert("Selected drink could not be found.");
             return;
+        }
+
+        const boba = preparedItems.find(
+            item => item.name === "Tapioca Pearls"
+        );
+
+        if (extraBoba > 0 && !boba) {
+            alert("Tapioca Pearls could not be found.");
+            return;
+        }
+
+        const toppings = [];
+
+        if (extraBoba > 0 && boba) {
+            toppings.push({
+                prepared_item_id: boba.id,
+                quantity: extraBoba
+            });
         }
 
         const orderData = {
@@ -98,33 +139,98 @@ function Orders() {
                     size: selectedSize,
                     sugar_level: selectedSugar,
                     ice_level: selectedIce,
-                    toppings: []
+                    toppings: toppings
                 }
             ]
         };
         
         console.log("Sending:", orderData);
 
-        fetch("http://localhost:8000/api/orders/create/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(orderData)
-        })
-        .then(response => {
+        try {
+            const response = await fetch(
+                "http://localhost:8000/api/orders/create/",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(orderData)
+                }
+            );
+
+            const data = await response.json();
+
             if (!response.ok) {
-                throw new Error("Network response was not ok");
+                alert(
+                    data.error ||
+                    "The order could not be created."
+                );
+                return;
             }
-            return response.json();
-        })
-        .then(data => {
-            console.log("Order created successfully:", data);
-            setOrders(prevOrders => [...prevOrders, data]);
-        })
-        .catch(error => {
-            console.error("Error creating order:", error);
-        });
+
+            console.log(
+                "Order created successfully:",
+                data.order
+            );
+
+            setOrders(prevOrders => [
+                ...prevOrders,
+                data.order
+            ]);
+
+            if (data.warnings.length > 0) {
+                alert(data.warnings.join("\n"));
+            }
+
+        } catch (error) {
+            console.error(
+                "Error creating order:",
+                error
+            );
+
+            alert(
+                "Something went wrong while creating the order."
+            );
+        }
+    }
+
+    async function completeOrder(orderId: number) {
+        try {
+            const response = await fetch(
+                `http://localhost:8000/api/orders/${orderId}/complete/`,
+                {
+                    method: "POST"
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(
+                    data.error ||
+                    "The order could not be completed."
+                );
+                return;
+            }
+
+            setOrders(prevOrders =>
+                prevOrders.map(order =>
+                    order.id === orderId
+                        ? data
+                        : order
+                )
+            );
+
+        } catch (error) {
+            console.error(
+                "Error completing order:",
+                error
+            );
+
+            alert(
+                "Something went wrong while completing the order."
+            );
+        }
     }
 
     {/* Orders pending and completed orders for today */}
@@ -132,6 +238,7 @@ function Orders() {
     const pendingOrders = orders.filter((order: Order) => {
         const orderDate = new Date(order.created_at);
         const today = new Date();
+
         return (
             order.status === "pending" &&
             orderDate.getFullYear() === today.getFullYear() &&
@@ -143,6 +250,7 @@ function Orders() {
     const completedOrders = orders.filter((order: Order) => {
         const orderDate = new Date(order.created_at);
         const today = new Date();
+
         return (
             order.status === "completed" &&
             orderDate.getFullYear() === today.getFullYear() &&
@@ -244,7 +352,8 @@ function Orders() {
                                 Drink
                             </label>
 
-                            <select onChange={(e) => setNewOrder(Number(e.target.value))}
+                            <select
+                                onChange={(e) => setNewOrder(Number(e.target.value))}
                                 defaultValue=""
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
@@ -269,23 +378,38 @@ function Orders() {
                             </label>
 
                             <div className="grid grid-cols-3 gap-2">
-                                <button onClick={() => setSelectedSize("small")}
+                                <button
+                                    onClick={() => setSelectedSize("small")}
                                     type="button"
-                                    className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
+                                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                                        selectedSize === "small"
+                                            ? "border-pink-300 bg-pink-100 text-pink-500"
+                                            : "border-stone-200 bg-white text-stone-600 hover:border-pink-300"
+                                    }`}
                                 >
                                     Small
                                 </button>
 
-                                <button onClick={() => setSelectedSize("medium")}
+                                <button
+                                    onClick={() => setSelectedSize("medium")}
                                     type="button"
-                                    className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
+                                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                                        selectedSize === "medium"
+                                            ? "border-pink-300 bg-pink-100 text-pink-500"
+                                            : "border-stone-200 bg-white text-stone-600 hover:border-pink-300"
+                                    }`}
                                 >
                                     Medium
                                 </button>
 
-                                <button onClick={() => setSelectedSize("large")}
+                                <button
+                                    onClick={() => setSelectedSize("large")}
                                     type="button"
-                                    className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
+                                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                                        selectedSize === "large"
+                                            ? "border-pink-300 bg-pink-100 text-pink-500"
+                                            : "border-stone-200 bg-white text-stone-600 hover:border-pink-300"
+                                    }`}
                                 >
                                     Large
                                 </button>
@@ -297,7 +421,8 @@ function Orders() {
                                 Sugar
                             </label>
 
-                            <select onChange={(e) => setSelectedSugar(e.target.value)}
+                            <select
+                                onChange={(e) => setSelectedSugar(e.target.value)}
                                 defaultValue="100"
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
@@ -365,7 +490,8 @@ function Orders() {
                         </div>
 
                         <button
-                            type="button" onClick={createOrder}
+                            type="button"
+                            onClick={createOrder}
                             className="mt-2 rounded-full bg-[#dcecee] px-5 py-3 text-sm font-semibold text-stone-700 transition hover:brightness-95"
                         >
                             Create order
@@ -397,8 +523,6 @@ function Orders() {
                     </div>
 
 
-                    {/* TODO: Loop through the orders here */}
-
                     {orders.map((order) => (
 
                         <div
@@ -424,10 +548,10 @@ function Orders() {
                                                 {menuItems.find((menuItem) => menuItem.id === item.menu_item)?.name || "Unknown drink"}
                                             </p>
 
-                                        <p className="mt-1 text-xs text-stone-400">
-                                            {item.quantity} x {item.size} - Sugar: {item.sugar_level}, Ice: {item.ice_level}
-                                        </p>
-                                    </div>
+                                            <p className="mt-1 text-xs text-stone-400">
+                                                {item.quantity} x {item.size} - Sugar: {item.sugar_level}, Ice: {item.ice_level}
+                                            </p>
+                                        </div>
 
                                     ))}
                                 </div>
@@ -453,7 +577,10 @@ function Orders() {
 
                                 {/* TIME */}
                                 <p className="text-sm text-stone-500">
-                                    {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(order.created_at).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit"
+                                    })}
                                 </p>
 
                             </div>
@@ -463,13 +590,7 @@ function Orders() {
                                 <div className="mt-4 flex justify-end gap-2">
                                     <button
                                         type="button"
-                                        className="rounded-full border border-stone-200 px-4 py-2 text-xs font-semibold text-stone-500 hover:bg-stone-50"
-                                    >
-                                        Cancel
-                                    </button>
-
-                                    <button
-                                        type="button"
+                                        onClick={() => completeOrder(order.id)}
                                         className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95"
                                     >
                                         Complete

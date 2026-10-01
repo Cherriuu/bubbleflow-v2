@@ -275,7 +275,7 @@ def create_order_view(request):
     data = input_serializer.validated_data
 
     try:
-        order = create_order(
+        order, warnings = create_order(
             shop=data["shop"],
             items=data["items"]
         )
@@ -289,7 +289,10 @@ def create_order_view(request):
     serializer = OrderSerializer(order)
 
     return Response(
-        serializer.data,
+        {
+            "order": serializer.data,
+            "warnings": warnings
+        },
         status=status.HTTP_201_CREATED
     )
 

@@ -8,7 +8,11 @@ from ..models import (
     RecipeComponent,
 )
 
-from .inventory import get_item_inventory, consume_fefo
+from .inventory import (
+    get_item_inventory,
+    get_estimated_servings,
+    consume_fefo,
+)
 
 
 @transaction.atomic
@@ -51,7 +55,34 @@ def create_order(shop, items):
                 quantity=topping.get("quantity", 1)
             )
 
-    return order
+    requirements = calculate_order_requirements(order)
+
+    for prepared_item, required_quantity in requirements.items():
+        available = get_item_inventory(prepared_item)
+
+        if available < required_quantity:
+            raise ValueError(
+                f"Insufficient inventory for {prepared_item.name}."
+            )
+
+    for prepared_item, required_quantity in requirements.items():
+        consume_fefo(
+            prepared_item,
+            required_quantity
+        )
+
+    warnings = []
+
+    for prepared_item in requirements:
+        servings_remaining = get_estimated_servings(prepared_item)
+
+        if servings_remaining <= 3:
+            warnings.append(
+                f"Low stock: {prepared_item.name} has about "
+                f"{servings_remaining} servings remaining."
+            )
+
+    return order, warnings
 
 
 def calculate_order_requirements(order):
@@ -108,22 +139,6 @@ def check_order_inventory(order):
 def complete_order(order):
     if order.status != OrderStatus.PENDING:
         raise ValueError("Only pending orders can be completed.")
-
-    requirements = calculate_order_requirements(order)
-
-    for prepared_item, required_quantity in requirements.items():
-        available = get_item_inventory(prepared_item)
-
-        if available < required_quantity:
-            raise ValueError(
-                f"Insufficient inventory for {prepared_item.name}."
-            )
-
-    for prepared_item, required_quantity in requirements.items():
-        consume_fefo(
-            prepared_item,
-            required_quantity
-        )
 
     order.status = OrderStatus.COMPLETED
     order.save()
