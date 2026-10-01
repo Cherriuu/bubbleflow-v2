@@ -1,4 +1,175 @@
+import { useState, useEffect } from "react";
+
+{/* Define the types for the data */}
+type Topping = {
+    id: number;
+    prepared_item: number;
+    quantity: string;
+};
+
+type OrderItem = {
+    id: number;
+    menu_item: number;
+    quantity: number;
+    size: "small" | "medium" | "large";
+    sugar_level: string;
+    ice_level: "no_ice" | "less_ice" | "regular_ice" | "extra_ice";
+    toppings: Topping[];
+};
+
+type Order = {
+    id: number;
+    shop: number;
+    status: "pending" | "completed" | "cancelled";
+    created_at: string;
+    order_items: OrderItem[];
+};
+
+type MenuItem = {
+    id: number;
+    shop: number;
+    name: string;
+    is_active: boolean;
+};
+
+{/* Pull data from the backend */}
+
 function Orders() {
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+
+    const [newOrder, setNewOrder] = useState<number | null>(null);
+
+    const [selectedSize, setSelectedSize] = useState<"small" | "medium" | "large">("medium");
+
+    const [selectedSugar, setSelectedSugar] = useState("100");
+
+    const [selectedIce, setSelectedIce] = useState("regular_ice");
+
+    const [extraBoba, setExtraBoba] = useState(0);
+
+    const [quantity, setQuantity] = useState(1);
+    
+
+    useEffect(() => {
+        async function getOrders() {
+            const response = await fetch(
+                "http://localhost:8000/api/orders/"
+            );
+
+            const data = await response.json();
+            setOrders(data);
+        }
+
+        getOrders();
+    }, []);
+
+    useEffect(() => {
+        async function getMenuItems() {
+            const response = await fetch(
+                "http://localhost:8000/api/menu-items/"
+            );
+
+            const data = await response.json();
+            setMenuItems(data);
+        }
+
+        getMenuItems();
+    }, []);
+
+    async function createOrder() {
+        if (newOrder === null) {
+            console.error("No drink selected for the new order.");
+            return;
+        }
+
+        const selectedMenuItem = menuItems.find(item => item.id === newOrder);
+        if (!selectedMenuItem) {
+            console.error("Selected drink not found in menu items.");
+            return;
+        }
+
+        const orderData = {
+            shop_id: selectedMenuItem.shop,
+            items: [
+                {
+                    menu_item_id: newOrder,
+                    quantity: quantity,
+                    size: selectedSize,
+                    sugar_level: selectedSugar,
+                    ice_level: selectedIce,
+                    toppings: []
+                }
+            ]
+        };
+        
+        console.log("Sending:", orderData);
+
+        fetch("http://localhost:8000/api/orders/create/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(orderData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Network response was not ok");
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("Order created successfully:", data);
+            setOrders(prevOrders => [...prevOrders, data]);
+        })
+        .catch(error => {
+            console.error("Error creating order:", error);
+        });
+    }
+
+    {/* Orders pending and completed orders for today */}
+
+    const pendingOrders = orders.filter((order: Order) => {
+        const orderDate = new Date(order.created_at);
+        const today = new Date();
+        return (
+            order.status === "pending" &&
+            orderDate.getFullYear() === today.getFullYear() &&
+            orderDate.getMonth() === today.getMonth() &&
+            orderDate.getDate() === today.getDate()
+        );
+    })
+
+    const completedOrders = orders.filter((order: Order) => {
+        const orderDate = new Date(order.created_at);
+        const today = new Date();
+        return (
+            order.status === "completed" &&
+            orderDate.getFullYear() === today.getFullYear() &&
+            orderDate.getMonth() === today.getMonth() &&
+            orderDate.getDate() === today.getDate()
+        );
+    })
+
+    const amountOfPendingOrders = pendingOrders.length;
+    const amountOfCompletedOrders = completedOrders.length;
+    
+    let drinksToday = 0;
+
+    for (const order of completedOrders) {
+        for (const item of order.order_items) {
+            drinksToday += item.quantity;
+        }
+    }
+
+    for (const order of pendingOrders) {
+        for (const item of order.order_items) {
+            drinksToday += item.quantity;
+        }
+    }
+
+    const ordersToday = drinksToday;
+
     return (
         <div className="w-full px-8 py-8">
 
@@ -24,7 +195,7 @@ function Orders() {
                     </p>
 
                     <p className="mt-2 text-3xl font-bold text-stone-800">
-                        --
+                        {amountOfPendingOrders}
                     </p>
                 </div>
 
@@ -34,7 +205,7 @@ function Orders() {
                     </p>
 
                     <p className="mt-2 text-3xl font-bold text-stone-800">
-                        --
+                        {amountOfCompletedOrders}
                     </p>
                 </div>
 
@@ -44,11 +215,13 @@ function Orders() {
                     </p>
 
                     <p className="mt-2 text-3xl font-bold text-pink-300">
-                        --
+                        {ordersToday}
                     </p>
                 </div>
 
             </div>
+
+            { /* Order form and recent orders section */}
 
             <div className="grid gap-6 xl:grid-cols-[1fr_1.6fr]">
 
@@ -71,7 +244,7 @@ function Orders() {
                                 Drink
                             </label>
 
-                            <select
+                            <select onChange={(e) => setNewOrder(Number(e.target.value))}
                                 defaultValue=""
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
@@ -79,19 +252,16 @@ function Orders() {
                                     Select a drink
                                 </option>
 
-                                <option value="thai-milk-tea">
-                                    Thai Milk Tea
-                                </option>
-
-                                <option value="brown-sugar-boba">
-                                    Brown Sugar Boba
-                                </option>
-
-                                <option value="coffee-milk-tea">
-                                    Coffee Milk Tea
-                                </option>
+                                {menuItems.map((item: MenuItem) => (
+                                    <option key={item.id} value={item.id}>
+                                        {item.name}
+                                    </option>
+                                ))}
+                                
                             </select>
                         </div>
+
+                        {/* Leaving sizes, sugar, ice, extra boba, and quantity as they are for now. */}
 
                         <div>
                             <label className="mb-2 block text-sm font-medium text-stone-600">
@@ -99,21 +269,21 @@ function Orders() {
                             </label>
 
                             <div className="grid grid-cols-3 gap-2">
-                                <button
+                                <button onClick={() => setSelectedSize("small")}
                                     type="button"
                                     className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
                                 >
                                     Small
                                 </button>
 
-                                <button
+                                <button onClick={() => setSelectedSize("medium")}
                                     type="button"
                                     className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
                                 >
                                     Medium
                                 </button>
 
-                                <button
+                                <button onClick={() => setSelectedSize("large")}
                                     type="button"
                                     className="rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:border-pink-300"
                                 >
@@ -127,7 +297,7 @@ function Orders() {
                                 Sugar
                             </label>
 
-                            <select
+                            <select onChange={(e) => setSelectedSugar(e.target.value)}
                                 defaultValue="100"
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
@@ -145,13 +315,14 @@ function Orders() {
                             </label>
 
                             <select
-                                defaultValue="regular"
+                                onChange={(e) => setSelectedIce(e.target.value)}
+                                defaultValue="regular_ice"
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
-                                <option value="no">No ice</option>
-                                <option value="less">Less ice</option>
-                                <option value="regular">Regular ice</option>
-                                <option value="extra">Extra ice</option>
+                                <option value="no_ice">No ice</option>
+                                <option value="less_ice">Less ice</option>
+                                <option value="regular_ice">Regular ice</option>
+                                <option value="extra_ice">Extra ice</option>
                             </select>
                         </div>
 
@@ -161,6 +332,7 @@ function Orders() {
                             </label>
 
                             <select
+                                onChange={(e) => setExtraBoba(Number(e.target.value))}
                                 defaultValue="0"
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             >
@@ -187,12 +359,13 @@ function Orders() {
                                 type="number"
                                 min="1"
                                 defaultValue="1"
+                                onChange={(e) => setQuantity(Number(e.target.value))}
                                 className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
                             />
                         </div>
 
                         <button
-                            type="button"
+                            type="button" onClick={createOrder}
                             className="mt-2 rounded-full bg-[#dcecee] px-5 py-3 text-sm font-semibold text-stone-700 transition hover:brightness-95"
                         >
                             Create order
@@ -201,6 +374,8 @@ function Orders() {
                     </div>
 
                 </section>
+
+                {/* Pending and completed orders section */}
 
                 <section className="overflow-hidden rounded-3xl border border-stone-200 bg-[#FFFDF7]">
 
@@ -221,82 +396,89 @@ function Orders() {
                         <span>Time</span>
                     </div>
 
-                    <div className="border-t border-stone-100 px-6 py-5">
-                        <div className="grid grid-cols-[0.7fr_1.6fr_1fr_1fr] items-center">
 
-                            <p className="text-sm font-semibold text-stone-700">
-                                #104
-                            </p>
+                    {/* TODO: Loop through the orders here */}
 
-                            <div>
-                                <p className="font-medium text-stone-800">
-                                    Thai Milk Tea
+                    {orders.map((order) => (
+
+                        <div
+                            key={order.id}
+                            className="border-t border-stone-100 px-6 py-5"
+                        >
+
+                            <div className="grid grid-cols-[0.7fr_1.6fr_1fr_1fr] items-center">
+
+                                {/* ORDER NUMBER */}
+                                <div className="text-sm font-semibold text-stone-700">
+                                    Order #{order.id}
+                                </div>
+
+
+                                {/* DRINKS */}
+                                <div className="space-y-2">
+
+                                    {order.order_items.map((item) => (
+
+                                        <div key={item.id}>
+                                            <p className="font-medium text-stone-800">
+                                                {menuItems.find((menuItem) => menuItem.id === item.menu_item)?.name || "Unknown drink"}
+                                            </p>
+
+                                        <p className="mt-1 text-xs text-stone-400">
+                                            {item.quantity} x {item.size} - Sugar: {item.sugar_level}, Ice: {item.ice_level}
+                                        </p>
+                                    </div>
+
+                                    ))}
+                                </div>
+
+
+                                {/* STATUS */}
+                                <div>
+                                    <span className="rounded-full px-3 py-1 text-xs font-semibold">
+                                        {order.status === "pending" && (
+                                            <span className="bg-yellow-100 text-yellow-700">
+                                                Pending
+                                            </span>
+                                        )}
+
+                                        {order.status === "completed" && (
+                                            <span className="bg-green-100 text-green-700">
+                                                Completed
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+
+
+                                {/* TIME */}
+                                <p className="text-sm text-stone-500">
+                                    {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </p>
 
-                                <p className="mt-1 text-xs text-stone-400">
-                                    Medium · 50% sugar · Less ice
-                                </p>
                             </div>
 
-                            <div>
-                                <span className="rounded-full bg-[#dcecee] px-3 py-1 text-xs font-semibold text-stone-700">
-                                    Pending
-                                </span>
-                            </div>
 
-                            <p className="text-sm text-stone-500">
-                                2 min ago
-                            </p>
+                            {order.status === "pending" && (
+                                <div className="mt-4 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        className="rounded-full border border-stone-200 px-4 py-2 text-xs font-semibold text-stone-500 hover:bg-stone-50"
+                                    >
+                                        Cancel
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95"
+                                    >
+                                        Complete
+                                    </button>
+                                </div>
+                            )}
 
                         </div>
-
-                        <div className="mt-4 flex justify-end gap-2">
-                            <button
-                                type="button"
-                                className="rounded-full border border-stone-200 px-4 py-2 text-xs font-semibold text-stone-500 hover:bg-stone-50"
-                            >
-                                Cancel
-                            </button>
-
-                            <button
-                                type="button"
-                                className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95"
-                            >
-                                Complete
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-stone-100 px-6 py-5">
-                        <div className="grid grid-cols-[0.7fr_1.6fr_1fr_1fr] items-center">
-
-                            <p className="text-sm font-semibold text-stone-700">
-                                #103
-                            </p>
-
-                            <div>
-                                <p className="font-medium text-stone-800">
-                                    Brown Sugar Boba
-                                </p>
-
-                                <p className="mt-1 text-xs text-stone-400">
-                                    Large · 100% sugar · Regular ice · +1 boba
-                                </p>
-                            </div>
-
-                            <div>
-                                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                                    Completed
-                                </span>
-                            </div>
-
-                            <p className="text-sm text-stone-500">
-                                8 min ago
-                            </p>
-
-                        </div>
-                    </div>
-
+                    ))}
                 </section>
 
             </div>
