@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from ..models import (
     Batch,
@@ -11,6 +12,14 @@ from ..models import (
     PreparedItem,
 )
 
+def update_batch_status(batch):
+    if batch.status == BatchStatus.PREPARING:
+        if timezone.now() >= batch.ready_at:
+            batch.status = BatchStatus.COOLING
+            batch.save()
+    elif batch.status == BatchStatus.READY:
+        if timezone.now() >= batch.expires_at:
+            expire_batch(batch)
 
 @transaction.atomic
 def create_batch(prepared_item, storage_location, batch_fraction, started_at):
@@ -22,8 +31,9 @@ def create_batch(prepared_item, storage_location, batch_fraction, started_at):
             "Storage location and prepared item must belong to the same shop."
         )
 
+    actual_preparation_time = prepared_item.preparation_time * float(batch_fraction)
     initial_quantity = prepared_item.default_batch_quantity * batch_fraction
-    ready_at = started_at + prepared_item.preparation_time
+    ready_at = started_at + actual_preparation_time
     expires_at = ready_at + prepared_item.default_shelf_life
 
     batch = Batch.objects.create(

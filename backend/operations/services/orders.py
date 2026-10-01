@@ -71,6 +71,7 @@ def create_order(shop, items):
             required_quantity
         )
 
+    # Return the order and any low stock warnings for the prepared items
     warnings = []
 
     for prepared_item in requirements:
@@ -146,11 +147,4 @@ def complete_order(order):
     return order
 
 
-def cancel_order(order):
-    if order.status != OrderStatus.PENDING:
-        raise ValueError("Only pending orders can be cancelled.")
-
-    order.status = OrderStatus.CANCELLED
-    order.save()
-
-    return order
+# Cancel an order and restore inventory has been removed for right now, might be added back later.

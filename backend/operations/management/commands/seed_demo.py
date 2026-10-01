@@ -33,7 +33,7 @@ class Command(BaseCommand):
             defaults={
                 "timezone": "America/New_York",
                 "inventory_buffer_percent": Decimal("10.00"),
-                "low_stock_threshold_servings": 5,
+                "low_stock_threshold_servings": 15,
             },
         )
 
@@ -81,45 +81,57 @@ class Command(BaseCommand):
         prepared_data = [
             {
                 "name": "Thai Tea",
+                "unit": Unit.MILLILITER,
                 "batch_quantity": 4000,
                 "serving_quantity": 500,
                 "prep_minutes": 20,
                 "shelf_life": timedelta(days=3),
+                "requires_cooling": True,
             },
             {
                 "name": "Black Tea",
+                "unit": Unit.MILLILITER,
                 "batch_quantity": 4000,
                 "serving_quantity": 500,
                 "prep_minutes": 15,
                 "shelf_life": timedelta(days=3),
+                "requires_cooling": True,
             },
             {
                 "name": "Oolong Tea",
+                "unit": Unit.MILLILITER,
                 "batch_quantity": 4000,
                 "serving_quantity": 500,
                 "prep_minutes": 15,
                 "shelf_life": timedelta(days=3),
+                "requires_cooling": True,
             },
             {
                 "name": "Jasmine Tea",
+                "unit": Unit.MILLILITER,
                 "batch_quantity": 4000,
                 "serving_quantity": 500,
                 "prep_minutes": 15,
                 "shelf_life": timedelta(days=3),
+                "requires_cooling": True,
             },
             {
                 "name": "Brown Sugar Milk",
+                "unit": Unit.MILLILITER,
                 "batch_quantity": 4000,
                 "serving_quantity": 500,
                 "prep_minutes": 20,
                 "shelf_life": timedelta(days=3),
+                "requires_cooling": True,
             },
             {
                 "name": "Tapioca Pearls",
+                "unit": Unit.GRAM,
                 "batch_quantity": 2000,
                 "serving_quantity": 60,
                 "prep_minutes": 45,
                 "shelf_life": timedelta(hours=4),
+                "requires_cooling": False,
             },
         ]
 
@@ -131,7 +143,7 @@ class Command(BaseCommand):
                 shop=shop,
                 name=data["name"],
                 defaults={
-                    "base_unit": Unit.MILLILITER,
+                    "base_unit": data["unit"],
                     "default_batch_quantity": Decimal(
                         str(data["batch_quantity"])
                     ),
@@ -143,6 +155,7 @@ class Command(BaseCommand):
                         minutes=data["prep_minutes"]
                     ),
                     "default_shelf_life": data["shelf_life"],
+                    "requires_cooling": data["requires_cooling"],
                     "is_active": True,
                 },
             )

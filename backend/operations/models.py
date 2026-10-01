@@ -20,7 +20,7 @@ class Shop(models.Model):
 
 class LocationType(models.TextChoices):
     REFRIGERATOR = "refrigerator", "Refrigerator" # key is saved in the database, value is human-readable
-    FREEZER = "freezer", "Freezer"
+    FREEZER = "freezer", "Freezer" # not utilizing right now, but could be useful in the future
     ROOM_TEMPERATURE = "room_temperature", "Room Temperature"
     PREP_STATION = "prep_station", "Prep Station"
 
@@ -51,6 +51,7 @@ class Unit(models.TextChoices):
     GRAM = "g", "Gram"
     OUNCE = "oz", "Ounce"
 
+# for right now, small, medium, and large use up the same amount of milk tea, this will be fixed later but just note
 
 class PreparedItem(models.Model):
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="prepared_items")
@@ -64,6 +65,7 @@ class PreparedItem(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    requires_cooling = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
@@ -152,7 +154,7 @@ class RecipeComponent(models.Model):
 class OrderStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     COMPLETED = "completed", "Completed"
-    CANCELLED = "cancelled", "Cancelled"
+    # CANCELED = "canceled", "Canceled"
 
 
 class Order(models.Model):

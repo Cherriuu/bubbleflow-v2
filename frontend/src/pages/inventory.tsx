@@ -30,6 +30,10 @@ function Inventory() {
         (item) => item.status === "low" || item.status === "out"
     ).length;
 
+    const readyBatchesCount = inventory.filter(
+        (item) => item.status === "available" || item.status === "low"
+    )
+
     return (
         <div className="w-full px-8 py-8">
 
@@ -72,11 +76,11 @@ function Inventory() {
 
                 <div className="rounded-3xl border border-stone-200 bg-[#FFFDF7] p-6">
                     <p className="text-sm font-medium text-stone-400">
-                        Active batches
+                        Ready batches
                     </p>
 
                     <p className="mt-2 text-3xl font-bold text-stone-800">
-                        --
+                        {readyBatchesCount.length}
                     </p>
                 </div>
 

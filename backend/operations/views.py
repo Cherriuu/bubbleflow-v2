@@ -34,12 +34,13 @@ from .services.inventory import (
     record_waste,
     record_correction,
     mark_batch_ready,
+    update_batch_status,
 )
 
 from .services.orders import (
     create_order,
     complete_order,
-    cancel_order,
+    #cancel_order,
 )
 
 from .services.forecasting import recommend_production
@@ -86,6 +87,10 @@ def batches(request):
         batches,
         many=True
     )
+
+    for batch in batches:
+        if batch.prepared_item.requires_cooling:
+            update_batch_status(batch)
 
     return Response(serializer.data)
 
@@ -319,26 +324,7 @@ def complete_order_view(request, order_id):
     return Response(serializer.data)
 
 
-# Cancel a pending order
-@api_view(["POST"])
-def cancel_order_view(request, order_id):
-    order = get_object_or_404(
-        Order,
-        id=order_id
-    )
-
-    try:
-        order = cancel_order(order)
-
-    except ValueError as error:
-        return Response(
-            {"error": str(error)},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    serializer = OrderSerializer(order)
-
-    return Response(serializer.data)
+# Cancel an order and restore inventory has been removed for right now, as it is not needed for the MVP. It might be added back later.
 
 
 # Get current inventory totals

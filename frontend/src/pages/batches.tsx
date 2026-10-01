@@ -131,6 +131,26 @@ function Batches() {
         }
     }
 
+    async function markBatchAsReady(batchId: number) {
+        try {
+            const response = await fetch(
+                `http://localhost:8000/api/batches/${batchId}/ready/`,
+                {
+                    method: "POST",
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error("Could not mark batch as ready.");
+            }
+
+            await getBatches();
+        } catch (error) {
+            console.error(error);
+            setMessage("Something went wrong while marking the batch as ready.");
+        }
+    }
+
 
     function getPreparedItem(batch: Batch) {
         return preparedItems.find(
@@ -546,12 +566,22 @@ function Batches() {
                                             >
                                                 {formatStatus(batch.status)}
                                             </span>
+
+
                                         </div>
 
 
                                         <p className="text-sm text-stone-500">
                                             {getTiming(batch)}
                                         </p>
+                                        
+                                        {/* Add a "Ready" button for batches that are preparing or cooling */}
+
+                                        <div className="flex justify-left gap-2">
+                                        { (batch.status === "preparing" || batch.status === "cooling") && (
+                                            <button onClick={() => markBatchAsReady(batch.id)} className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95">Ready</button>
+                                        ) }
+                                        </div>
 
                                     </div>
                                 </div>

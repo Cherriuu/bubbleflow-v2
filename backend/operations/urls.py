@@ -2,7 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Health
+    # Health check endpoint
     path("health/", views.health_check),
 
     # Basic data
@@ -21,7 +21,8 @@ urlpatterns = [
     # Order actions
     path("orders/create/", views.create_order_view),
     path("orders/<int:order_id>/complete/", views.complete_order_view),
-    path("orders/<int:order_id>/cancel/", views.cancel_order_view),
+    # Removed cancel order endpoint for now, might be added back later.
+    #path("orders/<int:order_id>/cancel/", views.cancel_order_view),
 
     # Dashboard
     path("inventory/", views.inventory_summary_view),

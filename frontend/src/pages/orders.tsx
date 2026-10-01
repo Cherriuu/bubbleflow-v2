@@ -20,7 +20,7 @@ type OrderItem = {
 type Order = {
     id: number;
     shop: number;
-    status: "pending" | "completed" | "cancelled";
+    status: "pending" | "completed"; /*| "cancelled"; */
     created_at: string;
     order_items: OrderItem[];
 };
