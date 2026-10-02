@@ -74,6 +74,19 @@ def get_item_inventory(prepared_item):
 
     return total_inventory
 
+def get_incoming_inventory(prepared_item):
+    batches = Batch.objects.filter(
+        prepared_item=prepared_item,
+        status__in=[BatchStatus.PREPARING, BatchStatus.COOLING],
+    )
+
+    total_incoming = Decimal("0")
+
+    for batch in batches:
+        total_incoming += get_batch_balance(batch)
+
+    return total_incoming
+
 
 def get_estimated_servings(prepared_item):
     inventory = get_item_inventory(prepared_item)

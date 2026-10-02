@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.db.models import Sum
 
 from ..models import InventoryEvent, EventType
-from .inventory import get_item_inventory
+from .inventory import get_item_inventory, get_incoming_inventory
 
 
 def get_usage_history(prepared_item, hours=4):
@@ -52,8 +52,9 @@ def recommend_production(prepared_item, forecast_hours=2, history_hours=4):
     )
 
     current_inventory = get_item_inventory(prepared_item)
+    incoming_inventory = get_incoming_inventory(prepared_item)
 
-    recommended_quantity = forecast - current_inventory
+    recommended_quantity = forecast - (current_inventory + incoming_inventory)
 
     if recommended_quantity < 0:
         return Decimal("0")
