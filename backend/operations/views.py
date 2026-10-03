@@ -20,7 +20,6 @@ from .serializers import (
     MenuItemSerializer,
     OrderSerializer,
     CreateBatchSerializer,
-    MarkBatchReadySerializer,
     WasteSerializer,
     CorrectionSerializer,
     CreateOrderSerializer,
@@ -53,15 +52,18 @@ def health_check(request):
 
 
 # Get all prepared items
-@api_view(["GET"])
-def prepared_items(request):
+@api_view(["GET"]) # Only accept GET requests for this endpoint
+def prepared_items(request): # Request is the HTTP request object that contains all the information about the incoming request
+    # Get all prepared items from the database using Django ORM
     items = PreparedItem.objects.all()
 
+    # Serialize the items queryset to simple Python data types that can be rendered into JSON
     serializer = PreparedItemSerializer(
         items,
         many=True
     )
 
+    # Django Rest Framework takes the serialized data and render it into JSON to be sent back in the HTTP response
     return Response(serializer.data)
 
 
@@ -78,19 +80,17 @@ def storage_locations(request):
     return Response(serializer.data)
 
 
-# Get all batches
 @api_view(["GET"])
 def batches(request):
     batches = Batch.objects.all()
+
+    for batch in batches:
+        update_batch_status(batch)
 
     serializer = BatchSerializer(
         batches,
         many=True
     )
-
-    for batch in batches:
-        if batch.prepared_item.requires_cooling:
-            update_batch_status(batch)
 
     return Response(serializer.data)
 
@@ -172,27 +172,12 @@ def mark_batch_ready_view(request, batch_id):
         id=batch_id
     )
 
-    input_serializer = MarkBatchReadySerializer(
-        data=request.data
+    batch = mark_batch_ready(batch)
+
+    return Response(
+        BatchSerializer(batch).data,
+        status=status.HTTP_200_OK
     )
-
-    input_serializer.is_valid(
-        raise_exception=True
-    )
-
-    try:
-        batch = mark_batch_ready(batch)
-
-    except ValueError as error:
-        return Response(
-            {"error": str(error)},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    serializer = BatchSerializer(batch)
-
-    return Response(serializer.data)
-
 
 # Record wasted inventory
 @api_view(["POST"])

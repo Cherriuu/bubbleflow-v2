@@ -5,39 +5,44 @@ from decimal import Decimal
 class Shop(models.Model):
     name = models.CharField(max_length=120)
     timezone = models.CharField(max_length=64, default="America/New_York")
+    # Buffer percentage to account for unexpected usage or spoilage
     inventory_buffer_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
+        help_text="Percentage of buffer stock to account for unexpected usage or spoilage",
         default=Decimal("10.00")
     )
     low_stock_threshold_servings = models.PositiveIntegerField(default=15)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Returns a human-readable representation of the shop, which is its name.
     def __str__(self):
         return self.name
 
 
 class LocationType(models.TextChoices):
-    REFRIGERATOR = "refrigerator", "Refrigerator" # key is saved in the database, value is human-readable
-    FREEZER = "freezer", "Freezer" # not utilizing right now, but could be useful in the future
+    REFRIGERATOR = "refrigerator", "Refrigerator" # Key is saved in the database, value is human-readable (key, value)
+    FREEZER = "freezer", "Freezer" # Not utilizing right now, but could be useful in the future
     ROOM_TEMPERATURE = "room_temperature", "Room Temperature"
     PREP_STATION = "prep_station", "Prep Station"
 
 
 class StorageLocation(models.Model):
+    # Creates a foreign key relationship to the Shop model, each storage location belongs to a specific shop. If the shop is deleted, all storage locations associated with that shop will also be deleted
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="storage_locations")
     name = models.CharField(max_length=120)
-    location_type = models.CharField(max_length=30, choices=LocationType.choices)
+    location_type = models.CharField(max_length=30, choices=LocationType.choices) # Expects one of the keys from the LocationType class
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Class Meta is used for extra rules and constraints
     class Meta:
-        # shop and name should be unique together, so that a shop cannot have two storage locations with the same name
+        # Constraint means the combination of the fields elements must be unique across the table
         constraints = [
             models.UniqueConstraint(
-                fields=["shop", "name"], # name backfridge 1, backfridge 2...
+                fields=["shop", "name"], # Ex: there cannot be two back refrigerators with the same name in the same shop
                 name="unique_storage_location_per_shop"
             )
         ]
@@ -51,9 +56,9 @@ class Unit(models.TextChoices):
     GRAM = "g", "Gram"
     OUNCE = "oz", "Ounce"
 
-# for right now, small, medium, and large use up the same amount of milk tea, this will be fixed later but just note
 
 class PreparedItem(models.Model):
+    # When the shop is deleted, all prepared items associated with that shop will also be deleted
     shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="prepared_items")
     name = models.CharField(max_length=120)
     base_unit = models.CharField(max_length=20, choices=Unit.choices)
@@ -89,6 +94,7 @@ class BatchStatus(models.TextChoices):
 
 
 class Batch(models.Model):
+    # When the prepared item is deleted, all batches associated with that prepared item will also be deleted
     prepared_item = models.ForeignKey(PreparedItem, on_delete=models.PROTECT, related_name="batches")
     storage_location = models.ForeignKey(StorageLocation, on_delete=models.PROTECT, related_name="batches")
     initial_quantity = models.DecimalField(max_digits=12, decimal_places=3)
@@ -99,12 +105,14 @@ class Batch(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        # Creates an index to optimize queries that filter by the prepared item, status, and expiration date of batches.
+        # Indexes take up additional space in the database, but they can significantly speed up read operations. Don't field too many indexes.
         indexes = [
             models.Index(fields=["prepared_item", "status", "expires_at"])
         ]
 
     def __str__(self):
-        return f"{self.prepared_item.name} Batch #{self.pk}"
+        return f"{self.prepared_item.name} Batch #{self.pk}" # pk is the primary key
 
 
 class EventType(models.TextChoices):
@@ -165,6 +173,7 @@ class Order(models.Model):
     def __str__(self):
         return f"Order #{self.pk} - {self.status}"
 
+# Small and large will be implemented in the future, but for now they will use the same amount of ingredients as medium.
 class Size(models.TextChoices):
     SMALL = "small", "Small"
     MEDIUM = "medium", "Medium"
@@ -186,79 +195,50 @@ class IceLevel(models.TextChoices):
     EXTRA_ICE = "extra_ice", "Extra Ice"
 
 
-# drinks are allowed to exist as separate rows
 class OrderItem(models.Model):
-    order = models.ForeignKey(
-        Order,
-        on_delete=models.CASCADE,
-        related_name="order_items"
-    )
-    menu_item = models.ForeignKey(
-        MenuItem,
-        on_delete=models.PROTECT,
-        related_name="order_items"
+    # OrderItem -> Order. If the order is deleted, all order items associated with that order will also be deleted
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="order_items")
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.PROTECT, related_name="order_items"
     )
     quantity = models.PositiveIntegerField(default=1)
 
-    size = models.CharField(
-        max_length=10,
-        choices=Size.choices,
-        default=Size.MEDIUM
-    )
-    sugar_level = models.CharField(
-        max_length=3,
-        choices=SugarLevel.choices,
-        default=SugarLevel.ONE_HUNDRED
-    )
-    ice_level = models.CharField(
-        max_length=20,
-        choices=IceLevel.choices,
-        default=IceLevel.REGULAR_ICE
-    )
+    size = models.CharField(max_length=10, choices=Size.choices, default=Size.MEDIUM)
+    sugar_level = models.CharField(max_length=3, choices=SugarLevel.choices, default=SugarLevel.ONE_HUNDRED)
+    ice_level = models.CharField(max_length=20, choices=IceLevel.choices, default=IceLevel.REGULAR_ICE)
 
     def __str__(self):
         return f"{self.quantity}x {self.menu_item.name}"
 
 class OrderItemTopping(models.Model):
-    order_item = models.ForeignKey(
-        OrderItem,
-        on_delete=models.CASCADE,
-        related_name="toppings"
-    )
-    prepared_item = models.ForeignKey(
-        PreparedItem,
-        on_delete=models.PROTECT,
-        related_name="order_item_toppings"
-    )
-    quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=3,
-        default=1
-    )
+    order_item = models.ForeignKey(OrderItem, on_delete=models.CASCADE, related_name="toppings")
+    prepared_item = models.ForeignKey(PreparedItem, on_delete=models.PROTECT, related_name="order_item_toppings")
+    quantity = models.DecimalField(max_digits=10, decimal_places=3,default=1)
 
     def __str__(self):
         return f"{self.order_item} - {self.prepared_item.name}"
 
 
 class InventoryEvent(models.Model):
+    # InventoryEvent -> Batch. Each inventory event is associated with a specific batch. Batch cannot be deleted if there are inventory events.
     batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="inventory_events")
-    order_item = models.ForeignKey(
-        OrderItem,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="inventory_events"
-    )
+    # The order item that caused the inventory change, if applicable. For example, if an order was placed and consumed inventory, this field would reference the corresponding OrderItem. If the inventory change was due to waste or a correction, this field would be null.
+    order_item = models.ForeignKey(OrderItem, null=True, blank=True, on_delete=models.SET_NULL, related_name="inventory_events")
     event_type = models.CharField(max_length=30, choices=EventType.choices)
-    quantity_delta = models.DecimalField(max_digits=12, decimal_places=3) # how much was added or removed from the batch
+    # How much the inventory changed (positive for additions, negative for subtractions)
+    quantity_delta = models.DecimalField(max_digits=12, decimal_places=3)
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        # When querying inventory events, they will be ordered by creation date and then by ID.
         ordering = ["created_at", "id"]
+        # Creates an index to optimize queries that filter by batch and creation date of inventory events.
         indexes = [
             models.Index(fields=["batch", "created_at"])
         ]
 
     def __str__(self):
         return f"Batch #{self.batch_id} - {self.event_type} ({self.quantity_delta})"
+
+# We use foreign keys and on_delete to prevent orphaned records, child records whose parents are gone. The database ensures referential integrity, meaning that relationships between tables remain consistent.
+# We use on_delete=models.PROTECT for most foreign keys to prevent deletion of parent records if there are still child records referencing them. This ensures that we don't accidentally delete important data that is still in use. For example, we don't want to delete a PreparedItem if there are still Batches associated with it.

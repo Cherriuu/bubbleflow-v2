@@ -11,9 +11,10 @@ from ..models import (
 from .inventory import (
     get_item_inventory,
     get_estimated_servings,
-    consume_fefo,
+    lock_available_batches,
+    get_inventory_from_batches,
+    consume_from_batches,
 )
-
 
 @transaction.atomic
 def create_order(shop, items):
@@ -27,10 +28,14 @@ def create_order(shop, items):
         quantity = item["quantity"]
 
         if quantity <= 0:
-            raise ValueError("Order item quantity must be greater than zero.")
+            raise ValueError(
+                "Order item quantity must be greater than zero."
+            )
 
         if menu_item.shop != shop:
-            raise ValueError("Menu item must belong to the same shop.")
+            raise ValueError(
+                "Menu item must belong to the same shop."
+            )
 
         order_item = OrderItem.objects.create(
             order=order,
@@ -57,25 +62,45 @@ def create_order(shop, items):
 
     requirements = calculate_order_requirements(order)
 
-    for prepared_item, required_quantity in requirements.items():
-        available = get_item_inventory(prepared_item)
+    sorted_requirements = sorted(
+        requirements.items(),
+        key=lambda item: item[0].id
+    )
+
+    locked_batches_by_item = {}
+
+    for prepared_item, required_quantity in sorted_requirements:
+        batches = lock_available_batches(
+            prepared_item
+        )
+
+        available = get_inventory_from_batches(
+            batches
+        )
 
         if available < required_quantity:
             raise ValueError(
                 f"Insufficient inventory for {prepared_item.name}."
             )
 
-    for prepared_item, required_quantity in requirements.items():
-        consume_fefo(
-            prepared_item,
+        locked_batches_by_item[
+            prepared_item.id
+        ] = batches
+
+    for prepared_item, required_quantity in sorted_requirements:
+        consume_from_batches(
+            locked_batches_by_item[
+                prepared_item.id
+            ],
             required_quantity
         )
 
-    # Return the order and any low stock warnings for the prepared items
     warnings = []
 
     for prepared_item in requirements:
-        servings_remaining = get_estimated_servings(prepared_item)
+        servings_remaining = get_estimated_servings(
+            prepared_item
+        )
 
         if servings_remaining <= 3:
             warnings.append(
@@ -103,9 +128,13 @@ def calculate_order_requirements(order):
             )
 
             if prepared_item in requirements:
-                requirements[prepared_item] += required_quantity
+                requirements[
+                    prepared_item
+                ] += required_quantity
             else:
-                requirements[prepared_item] = required_quantity
+                requirements[
+                    prepared_item
+                ] = required_quantity
 
         for topping in order_item.toppings.all():
             prepared_item = topping.prepared_item
@@ -117,18 +146,26 @@ def calculate_order_requirements(order):
             )
 
             if prepared_item in requirements:
-                requirements[prepared_item] += required_quantity
+                requirements[
+                    prepared_item
+                ] += required_quantity
             else:
-                requirements[prepared_item] = required_quantity
+                requirements[
+                    prepared_item
+                ] = required_quantity
 
     return requirements
 
 
 def check_order_inventory(order):
-    requirements = calculate_order_requirements(order)
+    requirements = calculate_order_requirements(
+        order
+    )
 
     for prepared_item, required_quantity in requirements.items():
-        available = get_item_inventory(prepared_item)
+        available = get_item_inventory(
+            prepared_item
+        )
 
         if available < required_quantity:
             return False
@@ -139,7 +176,9 @@ def check_order_inventory(order):
 @transaction.atomic
 def complete_order(order):
     if order.status != OrderStatus.PENDING:
-        raise ValueError("Only pending orders can be completed.")
+        raise ValueError(
+            "Only pending orders can be completed."
+        )
 
     order.status = OrderStatus.COMPLETED
     order.save()
