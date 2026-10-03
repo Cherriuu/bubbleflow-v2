@@ -32,8 +32,7 @@ type StorageLocation = {
 function Batches() {
     const [batches, setBatches] = useState<Batch[]>([]);
     const [preparedItems, setPreparedItems] = useState<PreparedItem[]>([]);
-    const [storageLocations, setStorageLocations] =
-        useState<StorageLocation[]>([]);
+    const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([]);
 
     const [selectedPreparedItem, setSelectedPreparedItem] = useState("");
     const [batchFraction, setBatchFraction] = useState("");

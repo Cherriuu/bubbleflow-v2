@@ -39,29 +39,6 @@ function Sidebar() {
         </NavLink>
 
       </nav>
-
-      <div className="mt-auto">
-        <div className="px-3">
-          <div className="flex items-center gap-3 rounded-2xl px-3 py-3">
-            
-            {/* Temporary avatar */}
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#dcecee] text-sm font-semibold text-[#53634E]">
-              C
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold text-stone-700">
-                Cherri
-              </p>
-              <p className="text-xs text-stone-400">
-                Manager
-              </p>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
     </aside>
   );
 }

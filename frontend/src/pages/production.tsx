@@ -29,11 +29,13 @@ type PreparedItem = {
 
 
 function Production() {
+    {/* State to hold the inventory data fetched from the API */}
+
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
     const [preparedItems, setPreparedItems] = useState<PreparedItem[]>([]);
 
-
+    
     useEffect(() => {
         async function getInventory() {
             const response = await fetch(

@@ -11,10 +11,11 @@ type InventoryItem = {
 };
 
 function Inventory() {
-    {/* State to hold the inventory data fetched from the API */}
-    
+    {/* State to hold the inventory data fetched from the API, stored in an array of InventoryItem objects */}
+
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
+    
     useEffect(() => {
         async function getInventory() {
             const response = await fetch(
