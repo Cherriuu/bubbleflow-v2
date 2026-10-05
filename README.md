@@ -89,10 +89,4 @@ Connect a hosted PostgreSQL database to the project and expose its connection st
 
 Set `DJANGO_SECRET_KEY` to a long random value in the Vercel project environment. If it is absent, Django generates a temporary key so the build can complete, but a stable value is required before adding login sessions or other signed data.
 
-After connecting the database, run the following once against the production database:
-
-```bash
-cd backend
-python manage.py migrate
-python manage.py seed_demo
-```
+When PostgreSQL configuration is present, the Vercel backend build automatically applies migrations and runs the idempotent `seed_demo` command. Builds without PostgreSQL skip these database steps.
