@@ -80,3 +80,19 @@ frontend/
 ## Status
 
 The core inventory, batch, ordering, and forecasting systems are working. I'm currently working on testing, deployment, and general cleanup.
+
+## Vercel Deployment
+
+The repository deploys as one Vercel project with a Django backend service and a Vite frontend service. Keep the Vercel project Root Directory set to the repository root.
+
+Connect a hosted PostgreSQL database to the project and expose its connection string as `DATABASE_URL`. Vercel Marketplace database integrations normally add this variable automatically. `DATABASE_URL` is used in production; the existing `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, and `DB_PORT` variables remain supported. SQLite is used only when neither configuration is present so Django can build and run locally without production secrets.
+
+Set `DJANGO_SECRET_KEY` to a long random value in the Vercel project environment. If it is absent, Django generates a temporary key so the build can complete, but a stable value is required before adding login sessions or other signed data.
+
+After connecting the database, run the following once against the production database:
+
+```bash
+cd backend
+python manage.py migrate
+python manage.py seed_demo
+```

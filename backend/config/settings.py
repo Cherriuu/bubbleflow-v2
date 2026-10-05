@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import secrets
+from urllib.parse import parse_qs, unquote, urlparse
 from dotenv import load_dotenv
 
 
@@ -25,7 +27,7 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or secrets.token_urlsafe(50)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
@@ -96,16 +98,49 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ["DB_NAME"],
-        'USER': os.environ["DB_USER"],
-        'PASSWORD': os.environ["DB_PASSWORD"],
-        'HOST': os.environ["DB_HOST"],
-        'PORT': os.environ["DB_PORT"],
+database_url = os.getenv("DATABASE_URL")
+
+if database_url:
+    parsed_database_url = urlparse(database_url)
+    query_options = {
+        key: values[-1]
+        for key, values in parse_qs(parsed_database_url.query).items()
     }
-}
+
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed_database_url.path.lstrip("/")),
+            "USER": unquote(parsed_database_url.username or ""),
+            "PASSWORD": unquote(parsed_database_url.password or ""),
+            "HOST": parsed_database_url.hostname or "",
+            "PORT": parsed_database_url.port or "",
+            "OPTIONS": query_options,
+            "CONN_MAX_AGE": 0,
+        }
+    }
+elif all(
+    os.getenv(variable)
+    for variable in ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
+):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ["DB_NAME"],
+            "USER": os.environ["DB_USER"],
+            "PASSWORD": os.environ["DB_PASSWORD"],
+            "HOST": os.environ["DB_HOST"],
+            "PORT": os.environ["DB_PORT"],
+            "CONN_MAX_AGE": 0,
+        }
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
@@ -143,3 +178,4 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
