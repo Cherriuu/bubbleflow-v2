@@ -1,5 +1,4 @@
 import { NavLink } from "react-router-dom";
-import ChristmasMusic from "./christmas_music";
 
 function Sidebar() {
   return (
@@ -40,8 +39,6 @@ function Sidebar() {
         </NavLink>
 
       </nav>
-
-      <ChristmasMusic />
     </aside>
   );
 }
