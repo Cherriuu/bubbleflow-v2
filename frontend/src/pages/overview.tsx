@@ -88,7 +88,7 @@ function Overview() {
     useEffect(() => {
         async function getInventory() {
             const response = await fetch(
-                "http://localhost:8000/api/inventory/"
+                "/api/inventory/"
             );
 
             const data = await response.json();
@@ -98,7 +98,7 @@ function Overview() {
 
         async function getOrders() {
             const response = await fetch(
-                "http://localhost:8000/api/orders/"
+                "/api/orders/"
             );
 
             const data = await response.json();
@@ -108,7 +108,7 @@ function Overview() {
 
         async function getBatches() {
             const response = await fetch(
-                "http://localhost:8000/api/batches/"
+                "/api/batches/"
             );
 
             const data = await response.json();
@@ -118,7 +118,7 @@ function Overview() {
 
         async function getPreparedItems() {
             const response = await fetch(
-                "http://localhost:8000/api/prepared-items/"
+                "/api/prepared-items/"
             );
 
             const data = await response.json();
@@ -128,7 +128,7 @@ function Overview() {
 
         async function getMenuItems() {
             const response = await fetch(
-                "http://localhost:8000/api/menu-items/"
+                "/api/menu-items/"
             );
 
             const data = await response.json();
@@ -138,7 +138,7 @@ function Overview() {
 
         async function getRecommendations() {
             const response = await fetch(
-                "http://localhost:8000/api/recommendations/"
+                "/api/recommendations/"
             );
 
             const data = await response.json();
