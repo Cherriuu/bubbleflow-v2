@@ -44,7 +44,7 @@ function Batches() {
 
     async function getBatches() {
         const response = await fetch(
-            "http://localhost:8000/api/batches/"
+            "/api/batches/"
         );
 
         const data = await response.json();
@@ -55,7 +55,7 @@ function Batches() {
     useEffect(() => {
         async function getPreparedItems() {
             const response = await fetch(
-                "http://localhost:8000/api/prepared-items/"
+                "/api/prepared-items/"
             );
 
             const data = await response.json();
@@ -65,7 +65,7 @@ function Batches() {
 
         async function getStorageLocations() {
             const response = await fetch(
-                "http://localhost:8000/api/storage-locations/"
+                "/api/storage-locations/"
             );
 
             const data = await response.json();
@@ -94,7 +94,7 @@ function Batches() {
 
         try {
             const response = await fetch(
-                "http://localhost:8000/api/batches/create/",
+                "/api/batches/create/",
                 {
                     method: "POST",
 
@@ -133,7 +133,7 @@ function Batches() {
     async function markBatchAsReady(batchId: number) {
         try {
             const response = await fetch(
-                `http://localhost:8000/api/batches/${batchId}/ready/`,
+                `/api/batches/${batchId}/ready/`,
                 {
                     method: "POST",
                 }

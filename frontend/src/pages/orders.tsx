@@ -58,7 +58,7 @@ function Orders() {
 
             const response = await fetch(
 
-                "http://localhost:8000/api/orders/"
+                "/api/orders/"
 
             );
 
@@ -79,7 +79,7 @@ function Orders() {
 
             const response = await fetch(
 
-                "http://localhost:8000/api/menu-items/"
+                "/api/menu-items/"
 
             );
 
@@ -98,7 +98,7 @@ function Orders() {
 
             const response = await fetch(
 
-                "http://localhost:8000/api/prepared-items/"
+                "/api/prepared-items/"
 
             );
             const data = await response.json();
@@ -197,7 +197,7 @@ function Orders() {
 
             const response = await fetch(
 
-                "http://localhost:8000/api/orders/create/",
+                "/api/orders/create/",
 
                 {
 
@@ -297,7 +297,7 @@ function Orders() {
 
             const response = await fetch(
 
-                `http://localhost:8000/api/orders/${orderId}/complete/`,
+                `/api/orders/${orderId}/complete/`,
 
                 {
 

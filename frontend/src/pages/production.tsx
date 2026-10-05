@@ -39,7 +39,7 @@ function Production() {
     useEffect(() => {
         async function getInventory() {
             const response = await fetch(
-                "http://localhost:8000/api/inventory/"
+                "/api/inventory/"
             );
 
             const data = await response.json();
@@ -50,7 +50,7 @@ function Production() {
 
         async function getRecommendations() {
             const response = await fetch(
-                "http://localhost:8000/api/recommendations/"
+                "/api/recommendations/"
             );
 
             const data = await response.json();
@@ -61,7 +61,7 @@ function Production() {
 
         async function getPreparedItems() {
             const response = await fetch(
-                "http://localhost:8000/api/prepared-items/"
+                "/api/prepared-items/"
             );
 
             const data = await response.json();
