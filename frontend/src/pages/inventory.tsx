@@ -19,7 +19,7 @@ function Inventory() {
     useEffect(() => {
         async function getInventory() {
             const response = await fetch(
-                "http://localhost:8000/api/inventory/"
+                "/api/inventory/"
             );
 
             const data = await response.json();
