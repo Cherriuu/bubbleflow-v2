@@ -2,7 +2,7 @@
 import type { HealthCheckResponse } from "../types/api";
 
 export async function checkHealth(): Promise<HealthCheckResponse> {
-    const response = await fetch('http://localhost:8000/api/health/');
+    const response = await fetch('/api/health/');
     if (!response.ok) {
         throw new Error('HTTP error! status: ' + response.status);
     }
