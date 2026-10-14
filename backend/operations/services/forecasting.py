@@ -45,16 +45,35 @@ def forecast_demand(prepared_item, forecast_hours=2, history_hours=4):
 
 
 def recommend_production(prepared_item, forecast_hours=2, history_hours=4):
-    forecast = forecast_demand(
+    usage = get_usage_history(
         prepared_item,
-        forecast_hours,
         history_hours
     )
 
     current_inventory = get_item_inventory(prepared_item)
     incoming_inventory = get_incoming_inventory(prepared_item)
 
-    recommended_quantity = forecast - (current_inventory + incoming_inventory)
+    total_supply = current_inventory + incoming_inventory
+
+    # Bug fix
+    # If we have no recent demand history, keep a baseline amount available.
+    if usage == 0:
+        baseline = prepared_item.default_batch_quantity / Decimal("2")
+
+        recommended_quantity = baseline - total_supply
+
+        if recommended_quantity < 0:
+            return Decimal("0")
+
+        return recommended_quantity
+
+    forecast = forecast_demand(
+        prepared_item,
+        forecast_hours,
+        history_hours
+    )
+
+    recommended_quantity = forecast - total_supply
 
     if recommended_quantity < 0:
         return Decimal("0")
