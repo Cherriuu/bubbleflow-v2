@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import menu_views, views
 
 urlpatterns = [
     # Health check endpoint
@@ -11,6 +11,7 @@ urlpatterns = [
     path("batches/", views.batches),
     path("menu-items/", views.menu_items),
     path("orders/", views.orders),
+    path("toppings/", views.toppings),
 
     # Batch actions
     path("batches/create/", views.create_batch_view),
@@ -24,6 +25,12 @@ urlpatterns = [
     path("orders/<int:order_id>/complete/", views.complete_order_view),
     # Removed cancel order endpoint for now, might be added back later.
     #path("orders/<int:order_id>/cancel/", views.cancel_order_view),
+
+    # Menu setup
+    path("menu/ingredients/", menu_views.ingredients_view),
+    path("menu/ingredients/<int:ingredient_id>/", menu_views.ingredient_detail_view),
+    path("menu/drinks/", menu_views.drinks_view),
+    path("menu/drinks/<int:drink_id>/", menu_views.drink_detail_view),
 
     # Dashboard
     path("inventory/", views.inventory_summary_view),

@@ -1,4 +1,3 @@
-# my old forecasting system, only works with 4 hours of history, and doesn't account for incoming inventory. Keeping it around for now in case we want to use it as a backup.
 from decimal import Decimal
 from datetime import timedelta
 

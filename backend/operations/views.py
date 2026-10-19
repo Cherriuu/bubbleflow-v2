@@ -55,6 +55,11 @@ def health_check(request):
     return Response({"status": "ok"})
 
 
+# Check whether a list request asked for hidden items too, with ?include_inactive=true
+def include_inactive(request):
+    return request.query_params.get("include_inactive") == "true"
+
+
 # Get all prepared items
 @api_view(["GET"]) # Only accept GET requests for this endpoint
 def prepared_items(request): # Request is the HTTP request object that contains all the information about the incoming request
@@ -63,6 +68,10 @@ def prepared_items(request): # Request is the HTTP request object that contains 
         shop=request.user.shop
     )
 
+    # Hidden items stay out of dropdowns; pages that show names for old batches ask for them too
+    if not include_inactive(request):
+        items = items.filter(is_active=True)
+
     # Serialize the items queryset to simple Python data types that can be rendered into JSON
     serializer = PreparedItemSerializer(
         items,
@@ -70,6 +79,23 @@ def prepared_items(request): # Request is the HTTP request object that contains 
     )
 
     # Django Rest Framework takes the serialized data and render it into JSON to be sent back in the HTTP response
+    return Response(serializer.data)
+
+
+# Get the active ingredients that can be added to drinks as toppings
+@api_view(["GET"])
+def toppings(request):
+    items = PreparedItem.objects.filter(
+        shop=request.user.shop,
+        is_active=True,
+        is_topping=True
+    ).order_by("name")
+
+    serializer = PreparedItemSerializer(
+        items,
+        many=True
+    )
+
     return Response(serializer.data)
 
 
@@ -111,6 +137,9 @@ def menu_items(request):
     items = MenuItem.objects.filter(
         shop=request.user.shop
     )
+
+    if not include_inactive(request):
+        items = items.filter(is_active=True)
 
     serializer = MenuItemSerializer(
         items,

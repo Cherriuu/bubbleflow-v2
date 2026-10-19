@@ -776,3 +776,212 @@ class BatchLedgerApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error"], "Correction would make the batch balance negative.")
         self.assertEqual(get_batch_balance(self.batch), Decimal("4000"))
+
+
+INGREDIENT = {
+    "name": "Thai Tea",
+    "base_unit": "ml",
+    "default_batch_quantity": "4000",
+    "quantity_per_serving": "500",
+    "preparation_time": 20,
+    "cooling_time": 30,
+    "default_shelf_life": 4320,
+    "requires_cooling": True,
+    "is_topping": False,
+    "is_active": True,
+}
+
+
+class MenuApiTests(APITestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.client.force_login(self.data["user"])
+
+    def test_create_and_edit_ingredient_with_minutes(self):
+        response = self.client.post("/api/menu/ingredients/", INGREDIENT, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["preparation_time"], 20)
+        self.assertEqual(response.data["cooling_time"], 30)
+        self.assertEqual(response.data["default_shelf_life"], 4320)
+
+        item = PreparedItem.objects.get(id=response.data["id"])
+        self.assertEqual(item.shop, self.data["shop"])
+        self.assertEqual(item.preparation_time, timedelta(minutes=20))
+        self.assertEqual(item.default_shelf_life, timedelta(days=3))
+
+        response = self.client.put(
+            f"/api/menu/ingredients/{item.id}/",
+            {**INGREDIENT, "name": "Thai Tea Concentrate", "preparation_time": 25, "requires_cooling": False},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Thai Tea Concentrate")
+        self.assertEqual(response.data["preparation_time"], 25)
+
+        # Turning off cooling clears the cooling time
+        self.assertEqual(response.data["cooling_time"], 0)
+
+    def test_ingredient_rejects_non_positive_numbers(self):
+        response = self.client.post(
+            "/api/menu/ingredients/",
+            {**INGREDIENT, "quantity_per_serving": "0", "default_shelf_life": 0},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("quantity_per_serving", response.data)
+        self.assertIn("default_shelf_life", response.data)
+
+    def test_duplicate_names_return_400(self):
+        response = self.client.post(
+            "/api/menu/ingredients/",
+            {**INGREDIENT, "name": "black tea"},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already have an ingredient", str(response.data["name"][0]))
+
+        response = self.client.post(
+            "/api/menu/drinks/",
+            {"name": "Black Tea", "is_active": True, "recipe": [{"prepared_item_id": self.data["tea"].id, "quantity": "500"}]},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", response.data)
+
+    def test_create_and_edit_drink_replaces_recipe(self):
+        pearls = PreparedItem.objects.create(
+            shop=self.data["shop"],
+            name="Tapioca Pearls",
+            base_unit=Unit.GRAM,
+            default_batch_quantity=Decimal("2000"),
+            quantity_per_serving=Decimal("60"),
+            preparation_time=timedelta(minutes=45),
+            default_shelf_life=timedelta(hours=4),
+            is_topping=True
+        )
+
+        response = self.client.post(
+            "/api/menu/drinks/",
+            {
+                "name": "Black Milk Tea",
+                "is_active": True,
+                "recipe": [
+                    {"prepared_item_id": self.data["tea"].id, "quantity": "400"},
+                    {"prepared_item_id": pearls.id, "quantity": "60"},
+                ],
+            },
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        drink = MenuItem.objects.get(id=response.data["id"])
+        self.assertEqual(drink.recipe_components.count(), 2)
+
+        response = self.client.put(
+            f"/api/menu/drinks/{drink.id}/",
+            {
+                "name": "Black Milk Tea",
+                "is_active": True,
+                "recipe": [{"prepared_item_id": self.data["tea"].id, "quantity": "450"}],
+            },
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [(row.prepared_item_id, row.quantity) for row in drink.recipe_components.all()],
+            [(self.data["tea"].id, Decimal("450"))]
+        )
+
+    def test_drink_needs_a_recipe_without_repeats(self):
+        tea_row = {"prepared_item_id": self.data["tea"].id, "quantity": "500"}
+
+        empty = self.client.post("/api/menu/drinks/", {"name": "Air", "recipe": []}, format="json")
+        repeated = self.client.post("/api/menu/drinks/", {"name": "Double", "recipe": [tea_row, tea_row]}, format="json")
+
+        self.assertEqual(empty.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(repeated.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_recipe_cannot_use_other_shops_ingredient(self):
+        other = make_shop("Shop B", "b@shop.test")
+
+        response = self.client.post(
+            "/api/menu/drinks/",
+            {"name": "Stolen Tea", "recipe": [{"prepared_item_id": other["tea"].id, "quantity": "500"}]},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("recipe", response.data)
+        self.assertFalse(MenuItem.objects.filter(name="Stolen Tea").exists())
+
+    def test_cannot_edit_other_shops_items(self):
+        other = make_shop("Shop B", "b@shop.test")
+
+        ingredient = self.client.patch(f"/api/menu/ingredients/{other['tea'].id}/", {"is_active": False}, format="json")
+        drink = self.client.patch(f"/api/menu/drinks/{other['menu_item'].id}/", {"is_active": False}, format="json")
+
+        self.assertEqual(ingredient.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(drink.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_inactive_items_are_hidden_from_order_and_batch_lists(self):
+        self.client.patch(f"/api/menu/ingredients/{self.data['tea'].id}/", {"is_active": False}, format="json")
+        self.client.patch(f"/api/menu/drinks/{self.data['menu_item'].id}/", {"is_active": False}, format="json")
+
+        self.assertEqual(self.client.get("/api/prepared-items/").data, [])
+        self.assertEqual(self.client.get("/api/menu-items/").data, [])
+
+        # Pages that show names for old batches and orders can still ask for them
+        self.assertEqual(len(self.client.get("/api/prepared-items/?include_inactive=true").data), 1)
+        self.assertEqual(len(self.client.get("/api/menu-items/?include_inactive=true").data), 1)
+
+        # The Menu page still lists everything
+        self.assertEqual(len(self.client.get("/api/menu/ingredients/").data), 1)
+        self.assertEqual(len(self.client.get("/api/menu/drinks/").data), 1)
+
+    def test_toppings_only_include_active_topping_ingredients(self):
+        for name, is_topping, is_active in [
+            ("Tapioca Pearls", True, True),
+            ("Grass Jelly", True, False),
+            ("Brown Sugar Syrup", False, True),
+        ]:
+            PreparedItem.objects.create(
+                shop=self.data["shop"],
+                name=name,
+                base_unit=Unit.GRAM,
+                default_batch_quantity=Decimal("1000"),
+                quantity_per_serving=Decimal("50"),
+                preparation_time=timedelta(minutes=30),
+                default_shelf_life=timedelta(hours=4),
+                is_topping=is_topping,
+                is_active=is_active
+            )
+
+        response = self.client.get("/api/toppings/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["name"] for row in response.data], ["Tapioca Pearls"])
+
+
+class RegistrationSetupTests(APITestCase):
+    def test_new_shop_gets_main_refrigerator(self):
+        cache.clear()
+
+        response = self.client.post(
+            "/api/auth/register/",
+            {"shop_name": "Fresh Start Tea", "email": "new@fresh.test", "password": PASSWORD},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        shop = Shop.objects.get(id=response.data["shop"]["id"])
+        self.assertEqual(
+            list(shop.storage_locations.values_list("name", "location_type")),
+            [("Main Refrigerator", LocationType.REFRIGERATOR)]
+        )

@@ -83,6 +83,8 @@ class PreparedItem(models.Model):
     requires_cooling = models.BooleanField(default=False)
     # How long a batch must cool after it's prepared before it can be served
     cooling_time = models.DurationField(default=timedelta(0))
+    # Toppings, like tapioca pearls, can be added to any drink as extra scoops
+    is_topping = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

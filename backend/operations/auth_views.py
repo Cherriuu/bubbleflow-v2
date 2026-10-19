@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
-from .models import Shop
+from .models import LocationType, Shop, StorageLocation
 from .serializers import RegisterSerializer, LoginSerializer
 
 
@@ -79,7 +79,7 @@ def register_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # The user and the shop are created together, or not at all
+    # The user, the shop, and its first storage location are created together, or not at all
     with transaction.atomic():
         user = User.objects.create_user(
             username=email,
@@ -87,9 +87,16 @@ def register_view(request):
             password=data["password"]
         )
 
-        Shop.objects.create(
+        shop = Shop.objects.create(
             owner=user,
             name=data["shop_name"].strip()
+        )
+
+        # Every shop starts with somewhere to store its batches
+        StorageLocation.objects.create(
+            shop=shop,
+            name="Main Refrigerator",
+            location_type=LocationType.REFRIGERATOR
         )
 
     login(request, user)
