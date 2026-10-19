@@ -1,5 +1,6 @@
  import { useEffect, useState } from "react";
 import { apiFetch } from "../api/client";
+import { formatStartBy } from "../utils/start_by";
 
 
 type InventoryItem = {
@@ -17,6 +18,7 @@ type Recommendation = {
     name: string;
     base_unit: string;
     recommended_quantity: number | string;
+    start_by: string | null;
 };
 
 
@@ -299,6 +301,12 @@ function Production() {
                                             Enough for now
                                         </span>
                                     )}
+
+                                    {recommendation.start_by && (
+                                        <p className="mt-2 text-xs font-medium text-pink-400">
+                                            {formatStartBy(recommendation.start_by)}
+                                        </p>
+                                    )}
                                 </div>
 
                             </div>
@@ -433,6 +441,12 @@ function Production() {
                                                 )}{" "}
                                                 {recommendation.base_unit} needed
                                             </p>
+
+                                            {recommendation.start_by && (
+                                                <p className="mt-1 text-xs font-medium text-pink-400">
+                                                    {formatStartBy(recommendation.start_by)}
+                                                </p>
+                                            )}
 
                                             <p className="mt-1 text-xs text-stone-400">
                                                 {batchSuggestion}

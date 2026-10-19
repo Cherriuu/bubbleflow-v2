@@ -43,6 +43,10 @@ function Sidebar() {
           Production
         </NavLink>
 
+        <NavLink to="/menu" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-base font-medium text-stone-700 hover:bg-[#dcecee] hover:text-stone-900">
+          Menu
+        </NavLink>
+
         <NavLink to="/about" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-base font-medium text-stone-700 hover:bg-[#dcecee] hover:text-stone-900">
           About
         </NavLink>

@@ -19,9 +19,32 @@ type Batch = {
 type PreparedItem = {
     id: number;
     name: string;
+    is_active: boolean;
+    base_unit: string;
     default_batch_quantity: string;
     batch_label: string;
 };
+
+
+{/* One change to a batch's inventory, from /api/batches/<id>/events/ */}
+type InventoryEvent = {
+    id: number;
+    event_type: "batch_created" | "order_consumption" | "waste" | "correction" | "expiry";
+    quantity_delta: string;
+    reason: string;
+    created_at: string;
+    order_id: number | null;
+};
+
+
+type BatchHistory = {
+    balance: string;
+    status: string;
+    events: InventoryEvent[];
+};
+
+
+type AdjustmentKind = "waste" | "correction";
 
 
 type StorageLocation = {
@@ -42,6 +65,18 @@ function Batches() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState("");
 
+    {/* The waste or correction form that's open, if any */}
+    const [adjustingBatchId, setAdjustingBatchId] = useState<number | null>(null);
+    const [adjustmentKind, setAdjustmentKind] = useState<AdjustmentKind>("waste");
+    const [adjustmentAmount, setAdjustmentAmount] = useState("");
+    const [adjustmentReason, setAdjustmentReason] = useState("");
+    const [adjustmentMessage, setAdjustmentMessage] = useState("");
+    const [isAdjusting, setIsAdjusting] = useState(false);
+
+    {/* The batch whose history is expanded, if any */}
+    const [historyBatchId, setHistoryBatchId] = useState<number | null>(null);
+    const [history, setHistory] = useState<BatchHistory | null>(null);
+
 
     async function getBatches() {
         const response = await apiFetch(
@@ -56,7 +91,7 @@ function Batches() {
     useEffect(() => {
         async function getPreparedItems() {
             const response = await apiFetch(
-                "/api/prepared-items/"
+                "/api/prepared-items/?include_inactive=true"
             );
 
             const data = await response.json();
@@ -149,6 +184,126 @@ function Batches() {
             console.error(error);
             setMessage("Something went wrong while marking the batch as ready.");
         }
+    }
+
+
+    {/* Get a batch's inventory events and current balance */}
+    async function getHistory(batchId: number) {
+        const response = await apiFetch(
+            `/api/batches/${batchId}/events/`
+        );
+
+        const data = await response.json();
+        setHistory(data);
+    }
+
+
+    {/* Show a batch's history, or hide it if it's already open */}
+    async function toggleHistory(batchId: number) {
+        if (historyBatchId === batchId) {
+            setHistoryBatchId(null);
+            setHistory(null);
+            return;
+        }
+
+        setHistoryBatchId(batchId);
+        setHistory(null);
+
+        try {
+            await getHistory(batchId);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+
+    {/* Open the waste or correction form for a batch */}
+    function openAdjustment(batchId: number, kind: AdjustmentKind) {
+        setAdjustingBatchId(batchId);
+        setAdjustmentKind(kind);
+        setAdjustmentAmount("");
+        setAdjustmentReason("");
+        setAdjustmentMessage("");
+    }
+
+
+    {/* Send the waste or correction to the API, then refresh the batches */}
+    async function submitAdjustment(batchId: number) {
+        if (!adjustmentAmount || !adjustmentReason.trim()) {
+            setAdjustmentMessage("Please enter an amount and a reason.");
+            return;
+        }
+
+        setIsAdjusting(true);
+        setAdjustmentMessage("");
+
+        try {
+            const response = await apiFetch(
+                `/api/batches/${batchId}/${adjustmentKind}/`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+
+                    body: JSON.stringify({
+                        quantity: adjustmentAmount,
+                        reason: adjustmentReason.trim(),
+                    }),
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // Our own errors come as {"error": ...}, field errors as {"quantity": ["..."]}
+                const fieldError = Object.values(data).flat()[0];
+
+                setAdjustmentMessage(
+                    data.error ||
+                    (typeof fieldError === "string" ? fieldError : "") ||
+                    "The change could not be saved."
+                );
+                return;
+            }
+
+            setAdjustingBatchId(null);
+
+            await getBatches();
+
+            if (historyBatchId === batchId) {
+                await getHistory(batchId);
+            }
+        } catch (error) {
+            console.error(error);
+            setAdjustmentMessage("Something went wrong while saving the change.");
+        } finally {
+            setIsAdjusting(false);
+        }
+    }
+
+
+    {/* Readable names for each kind of inventory event */}
+    function formatEventType(eventType: InventoryEvent["event_type"]) {
+        const labels = {
+            batch_created: "Batch created",
+            order_consumption: "Order consumption",
+            waste: "Waste",
+            correction: "Correction",
+            expiry: "Expired",
+        };
+
+        return labels[eventType] ?? eventType;
+    }
+
+
+    {/* Show an amount with its sign and unit, like +4,000 ml or −500 ml */}
+    function formatSignedAmount(quantity: string, unit: string) {
+        const amount = Number(quantity);
+        const sign = amount < 0 ? "−" : "+";
+
+        return `${sign}${Math.abs(amount).toLocaleString()} ${unit}`;
     }
 
 
@@ -399,7 +554,8 @@ function Batches() {
                                     Select an item
                                 </option>
 
-                                {preparedItems.map((item) => (
+                                {/* Hidden items keep their old batches but can't start new ones */}
+                                {preparedItems.filter((item) => item.is_active).map((item) => (
                                     <option
                                         key={item.id}
                                         value={item.id}
@@ -581,9 +737,146 @@ function Batches() {
                                         { (batch.status === "preparing" || batch.status === "cooling") && (
                                             <button onClick={() => markBatchAsReady(batch.id)} className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95">Ready</button>
                                         ) }
+
+                                        {/* Waste and corrections only make sense while there's stock left */}
+                                        { Number(batch.balance) > 0 && (
+                                            <>
+                                                <button type="button" onClick={() => openAdjustment(batch.id, "waste")} className="rounded-full bg-[#dcecee] px-4 py-2 text-xs font-semibold text-stone-700 hover:brightness-95">Record waste</button>
+                                                <button type="button" onClick={() => openAdjustment(batch.id, "correction")} className="rounded-full bg-[#dcecee] px-4 py-2 text-xs font-semibold text-stone-700 hover:brightness-95">Correct</button>
+                                            </>
+                                        ) }
+
+                                        <button type="button" onClick={() => toggleHistory(batch.id)} className="rounded-full bg-[#dcecee] px-4 py-2 text-xs font-semibold text-stone-700 hover:brightness-95">
+                                            {historyBatchId === batch.id ? "Hide history" : "History"}
+                                        </button>
                                         </div>
 
                                     </div>
+
+
+                                    {/* Inline waste or correction form */}
+
+                                    {adjustingBatchId === batch.id && (
+                                        <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-stone-50 px-4 py-4">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                                                {adjustmentKind === "waste" ? "Record waste" : "Correct inventory"}
+                                            </p>
+
+                                            <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
+                                                <div>
+                                                    <label className="mb-2 block text-sm font-medium text-stone-600">
+                                                        Amount ({item?.base_unit ?? "units"})
+                                                    </label>
+
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        min={adjustmentKind === "waste" ? "0" : undefined}
+                                                        value={adjustmentAmount}
+                                                        onChange={(event) => setAdjustmentAmount(event.target.value)}
+                                                        placeholder={adjustmentKind === "waste" ? "500" : "Use − to remove, e.g. -250"}
+                                                        className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="mb-2 block text-sm font-medium text-stone-600">
+                                                        Reason
+                                                    </label>
+
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        value={adjustmentReason}
+                                                        onChange={(event) => setAdjustmentReason(event.target.value)}
+                                                        placeholder={adjustmentKind === "waste" ? "Spilled during prep" : "Recounted the pitcher"}
+                                                        className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {adjustmentMessage && (
+                                                <p className="text-sm text-stone-500">
+                                                    {adjustmentMessage}
+                                                </p>
+                                            )}
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => submitAdjustment(batch.id)}
+                                                    disabled={isAdjusting}
+                                                    className="rounded-full bg-pink-300 px-4 py-2 text-xs font-semibold text-white hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {isAdjusting ? "Saving..." : "Save"}
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAdjustingBatchId(null)}
+                                                    className="rounded-full bg-[#dcecee] px-4 py-2 text-xs font-semibold text-stone-700 hover:brightness-95"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+
+                                    {/* Batch history, newest first */}
+
+                                    {historyBatchId === batch.id && (
+                                        <div className="mt-4 rounded-2xl bg-stone-50 px-4 py-4">
+                                            {history === null ? (
+                                                <p className="text-sm text-stone-400">
+                                                    Loading history...
+                                                </p>
+                                            ) : (
+                                                <>
+                                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                                                        Current balance
+                                                    </p>
+
+                                                    <p className="mt-1 text-sm font-medium text-stone-700">
+                                                        {Number(history.balance).toLocaleString()} {item?.base_unit}
+                                                    </p>
+
+                                                    <div className="mt-4 flex flex-col">
+                                                        {history.events.map((event) => (
+                                                            <div
+                                                                key={event.id}
+                                                                className="grid grid-cols-[1.2fr_1fr_2fr_1fr] items-center gap-2 border-t border-stone-200 py-3"
+                                                            >
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-stone-800">
+                                                                        {formatEventType(event.event_type)}
+                                                                    </p>
+
+                                                                    {event.order_id !== null && (
+                                                                        <p className="mt-1 text-xs text-stone-400">
+                                                                            Order #{event.order_id}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+
+                                                                <p className={`text-sm font-medium ${Number(event.quantity_delta) < 0 ? "text-pink-500" : "text-green-700"}`}>
+                                                                    {formatSignedAmount(event.quantity_delta, item?.base_unit ?? "")}
+                                                                </p>
+
+                                                                <p className="text-sm text-stone-500">
+                                                                    {event.reason || "—"}
+                                                                </p>
+
+                                                                <p className="text-xs text-stone-400">
+                                                                    {new Date(event.created_at).toLocaleString()}
+                                                                </p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })

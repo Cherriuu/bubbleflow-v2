@@ -9,6 +9,7 @@ import Orders from "./pages/orders"
 import Production from "./pages/production"
 import About from "./pages/about"
 import Overview from "./pages/overview"
+import Menu from "./pages/menu"
 import Login from "./pages/login"
 import Register from "./pages/register"
 
@@ -30,6 +31,7 @@ function App() {
             <Route path="/batches" element={<Batches />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/production" element={<Production />} />
+            <Route path="/menu" element={<Menu />} />
           </Route>
         </Routes>
       </AuthProvider>

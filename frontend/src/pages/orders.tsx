@@ -34,7 +34,8 @@ type MenuItem = {
     is_active: boolean;
 };
 
-type PreparedItem = {
+{/* An ingredient the shop offers as an extra, like tapioca pearls */}
+type ToppingIngredient = {
     id: number;
     shop: number;
     name: string;
@@ -45,11 +46,12 @@ type PreparedItem = {
 function Orders() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-    const [preparedItems, setPreparedItems] = useState<PreparedItem[]>([]);
+    const [toppings, setToppings] = useState<ToppingIngredient[]>([]);
     const [newOrder, setNewOrder] = useState<number | null>(null);
     const [selectedSugar, setSelectedSugar] = useState("100");
     const [selectedIce, setSelectedIce] = useState("regular_ice");
-    const [extraBoba, setExtraBoba] = useState(0);
+    {/* Extra scoops chosen for each topping, by topping id */}
+    const [toppingScoops, setToppingScoops] = useState<Record<number, number>>({});
     const [quantity, setQuantity] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -80,7 +82,7 @@ function Orders() {
 
             const response = await apiFetch(
 
-                "/api/menu-items/"
+                "/api/menu-items/?include_inactive=true"
 
             );
 
@@ -95,20 +97,20 @@ function Orders() {
 
     useEffect(() => {
 
-        async function getPreparedItems() {
+        async function getToppings() {
 
             const response = await apiFetch(
 
-                "/api/prepared-items/"
+                "/api/toppings/"
 
             );
             const data = await response.json();
 
-            setPreparedItems(data);
+            setToppings(data);
 
         }
 
-        getPreparedItems();
+        getToppings();
 
     }, []);
 
@@ -136,33 +138,13 @@ function Orders() {
 
         }
 
-        const boba = preparedItems.find(
-
-            item => item.name === "Tapioca Pearls"
-
-        );
-
-        if (extraBoba > 0 && !boba) {
-
-            alert("Tapioca Pearls could not be found.");
-
-            return;
-
-        }
-
-        const toppings = [];
-
-        if (extraBoba > 0 && boba) {
-
-            toppings.push({
-
-                prepared_item_id: boba.id,
-
-                quantity: extraBoba
-
-            });
-
-        }
+        // Only send toppings the customer actually added
+        const orderToppings = toppings
+            .filter((topping) => (toppingScoops[topping.id] ?? 0) > 0)
+            .map((topping) => ({
+                prepared_item_id: topping.id,
+                quantity: toppingScoops[topping.id]
+            }));
 
         const orderData = {
 
@@ -182,7 +164,7 @@ function Orders() {
 
                     ice_level: selectedIce,
 
-                    toppings: toppings
+                    toppings: orderToppings
 
                 }
 
@@ -624,7 +606,8 @@ function Orders() {
 
 
 
-                                {menuItems.map((item: MenuItem) => (
+                                {/* Hidden drinks keep their names in past orders but can't be ordered */}
+                                {menuItems.filter((item) => item.is_active).map((item: MenuItem) => (
 
                                     <option key={item.id} value={item.id}>
 
@@ -640,7 +623,7 @@ function Orders() {
 
 
 
-                        {/* Leaving sugar, ice, extra boba, and quantity as they are for now. */}
+                        {/* Leaving sugar, ice, toppings, and quantity as they are for now. */}
 
 
 
@@ -714,51 +697,24 @@ function Orders() {
 
 
 
-                        <div>
+                        {/* One "extra" choice per topping the shop has set up on the Menu page */}
+                        {toppings.map((topping) => (
+                            <div key={topping.id}>
+                                <label className="mb-2 block text-sm font-medium text-stone-600">
+                                    Extra {topping.name.toLowerCase()}
+                                </label>
 
-                            <label className="mb-2 block text-sm font-medium text-stone-600">
-
-                                Extra boba
-
-                            </label>
-
-
-
-                            <select
-
-                                onChange={(e) => setExtraBoba(Number(e.target.value))}
-
-                                defaultValue="0"
-
-                                className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
-
-                            >
-
-                                <option value="0">
-
-                                    None
-
-                                </option>
-
-
-
-                                <option value="1">
-
-                                    +1 scoop
-
-                                </option>
-
-
-
-                                <option value="2">
-
-                                    +2 scoops
-
-                                </option>
-
-                            </select>
-
-                        </div>
+                                <select
+                                    value={toppingScoops[topping.id] ?? 0}
+                                    onChange={(e) => setToppingScoops({ ...toppingScoops, [topping.id]: Number(e.target.value) })}
+                                    className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700 outline-none focus:border-pink-300"
+                                >
+                                    <option value="0">None</option>
+                                    <option value="1">+1 scoop</option>
+                                    <option value="2">+2 scoops</option>
+                                </select>
+                            </div>
+                        ))}
 
 
 

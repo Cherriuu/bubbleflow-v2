@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api/client";
 
 import InventoryRow from "../components/inventory_row";
+import { formatStartBy } from "../utils/start_by";
 
 
 type InventoryItem = {
@@ -74,6 +75,7 @@ type Recommendation = {
     name: string;
     base_unit: string;
     recommended_quantity: number | string;
+    start_by: string | null;
 };
 
 
@@ -119,7 +121,7 @@ function Overview() {
 
         async function getPreparedItems() {
             const response = await apiFetch(
-                "/api/prepared-items/"
+                "/api/prepared-items/?include_inactive=true"
             );
 
             const data = await response.json();
@@ -129,7 +131,7 @@ function Overview() {
 
         async function getMenuItems() {
             const response = await apiFetch(
-                "/api/menu-items/"
+                "/api/menu-items/?include_inactive=true"
             );
 
             const data = await response.json();
@@ -586,6 +588,12 @@ function Overview() {
                                     )}{" "}
                                     {recommendation.base_unit}
                                 </p>
+
+                                {recommendation.start_by && (
+                                    <p className="mt-1 text-xs font-medium text-pink-400">
+                                        {formatStartBy(recommendation.start_by)}
+                                    </p>
+                                )}
                             </div>
                         ))}
 
