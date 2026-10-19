@@ -1,6 +1,6 @@
 # Tests for shop registration, login, and keeping each shop's data separate.
 # Run with: python manage.py test operations
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 import threading
 
@@ -38,14 +38,11 @@ from .services.inventory import (
     record_correction,
 )
 from .services.orders import create_order
-from .services.forecast import (
-    expected_demand,
-    get_item_forecast,
-    hourly_profile,
-    project_stock,
-    recommend_batch_fraction,
-    start_by,
-    today_factor,
+from .services.forecasting import (
+    forecast_demand,
+    get_same_hours_usage,
+    get_start_by,
+    recommend_production,
 )
 
 
@@ -611,152 +608,96 @@ class ConcurrencyTests(TransactionTestCase):
         self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
 
 
-class ForecastFunctionTests(TestCase):
-    def test_hourly_profile_averages_across_days(self):
-        events = [
-            (datetime(2026, 10, 1, 9, 10), Decimal("100")),
-            (datetime(2026, 10, 2, 9, 50), Decimal("300")),
-            (datetime(2026, 10, 2, 14, 0), Decimal("40")),
-        ]
+# A depleted batch that holds past sales, so the history doesn't change the shop's current inventory
+def make_history_batch(data):
+    now = timezone.now()
 
-        profile = hourly_profile(events, 2)
+    return Batch.objects.create(
+        prepared_item=data["tea"],
+        storage_location=data["location"],
+        initial_quantity=Decimal("0"),
+        status=BatchStatus.DEPLETED,
+        started_at=now - timedelta(days=10),
+        expires_at=now - timedelta(days=9)
+    )
 
-        self.assertEqual(len(profile), 24)
-        self.assertEqual(profile[9], Decimal("200"))
-        self.assertEqual(profile[14], Decimal("20"))
-        self.assertEqual(profile[10], Decimal("0"))
 
-    def test_today_factor_clamps_and_ignores_tiny_expected(self):
-        self.assertEqual(today_factor(Decimal("150"), Decimal("100")), Decimal("1.5"))
-        self.assertEqual(today_factor(Decimal("500"), Decimal("100")), Decimal("2.0"))
-        self.assertEqual(today_factor(Decimal("10"), Decimal("100")), Decimal("0.5"))
-        self.assertEqual(today_factor(Decimal("50"), Decimal("0")), Decimal("1"))
-        self.assertEqual(
-            today_factor(Decimal("50"), Decimal("200"), minimum_expected=Decimal("500")),
-            Decimal("1")
-        )
+# Record order usage at a past time
+def record_usage(batch, quantity, when):
+    event = InventoryEvent.objects.create(
+        batch=batch,
+        event_type=EventType.ORDER_CONSUMPTION,
+        quantity_delta=-Decimal(quantity)
+    )
 
-    def test_expected_demand_splits_each_hour_into_slots(self):
-        profile = [Decimal("0")] * 24
-        profile[9] = Decimal("40")
-        profile[10] = Decimal("80")
+    # Bulk update is only used here to backdate test data, since created_at is set automatically
+    InventoryEvent.objects.filter(pk=event.pk).update(created_at=when)
 
-        demand = expected_demand(profile, datetime(2026, 10, 1, 9, 30), 4, Decimal("1.5"))
 
-        self.assertEqual(demand, [Decimal("15"), Decimal("15"), Decimal("30"), Decimal("30")])
+class RecommenderTests(TestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.tea = self.data["tea"]
+        self.history = make_history_batch(self.data)
+        self.now = timezone.now()
 
-    def test_project_stock_runout_slot_for_simple_demand(self):
-        runout_slot, waste = project_stock([(0, 100, Decimal("100"))], [Decimal("30")] * 10)
+    def test_same_hours_usage_averages_past_days_and_ignores_other_hours(self):
+        record_usage(self.history, "700", self.now - timedelta(days=1) + timedelta(hours=1))
+        record_usage(self.history, "700", self.now - timedelta(days=2) + timedelta(minutes=30))
 
-        # 100 covers slots 0-2 (90), and slot 3 needs 30 with only 10 left
-        self.assertEqual(runout_slot, 3)
-        self.assertEqual(waste, Decimal("0"))
+        # Outside the 2-hour window on those days
+        record_usage(self.history, "5000", self.now - timedelta(days=1) + timedelta(hours=3))
+        record_usage(self.history, "5000", self.now - timedelta(days=1) - timedelta(hours=1))
 
-    def test_project_stock_counts_expired_lot_as_waste(self):
-        runout_slot, waste = project_stock([(0, 2, Decimal("100"))], [Decimal("10")] * 5)
+        # 1400 over 7 days
+        self.assertEqual(get_same_hours_usage(self.tea), Decimal("200"))
 
-        # 20 is used in slots 0-1, the other 80 expires at slot 2 and can't be used after
-        self.assertEqual(runout_slot, 2)
-        self.assertEqual(waste, Decimal("80"))
+    def test_forecast_demand_falls_back_to_trailing_rate(self):
+        record_usage(self.history, "800", self.now - timedelta(hours=1))
 
-    def test_project_stock_uses_in_progress_lot_only_once_available(self):
-        lots = [
-            (0, 100, Decimal("20")),
-            (3, 100, Decimal("100")),
-        ]
+        self.assertEqual(get_same_hours_usage(self.tea), Decimal("0"))
 
-        runout_slot, waste = project_stock(lots, [Decimal("10")] * 6)
+        # 800 over 4 hours is 200 an hour, for 2 hours, plus the 10% buffer
+        self.assertEqual(forecast_demand(self.tea), Decimal("440"))
 
-        # Slots 0-1 use the ready lot, slot 2 has nothing, and the new lot covers slots 3-5
-        self.assertEqual(runout_slot, 2)
-        self.assertEqual(waste, Decimal("0"))
+    def test_recommends_batch_when_past_days_were_busy_but_last_hours_quiet(self):
+        for day in range(1, 8):
+            record_usage(self.history, "7000", self.now - timedelta(days=day) + timedelta(hours=1))
 
-    def test_project_stock_uses_earliest_expiring_lot_first(self):
-        lots = [
-            (0, 100, Decimal("50")),
-            (0, 5, Decimal("50")),
-        ]
-
-        runout_slot, waste = project_stock(lots, [Decimal("10")] * 6)
-
-        # Using the lot that expires at slot 5 first leaves nothing of it to waste
-        self.assertIsNone(runout_slot)
-        self.assertEqual(waste, Decimal("0"))
+        # 7000 expected plus the 10% buffer, minus the 4000 ready
+        self.assertEqual(recommend_production(self.tea), Decimal("3700"))
 
     def test_start_by_subtracts_prep_and_cooling(self):
-        now = timezone.now()
-        prep = timedelta(minutes=30)
-        cooling = timedelta(minutes=20)
+        self.tea.cooling_time = timedelta(minutes=20)
+        self.tea.save()
 
-        start_time, _ = start_by(now + timedelta(hours=3), prep, cooling, now)
+        for day in range(1, 8):
+            record_usage(self.history, "1000", self.now - timedelta(days=day) + timedelta(hours=1))
 
-        self.assertEqual(start_time, now + timedelta(hours=3) - prep - cooling)
+        before = timezone.now()
+        start_time = get_start_by(self.tea)
+        after = timezone.now()
 
-    def test_start_by_status_boundaries(self):
-        now = timezone.now()
-        prep = timedelta(minutes=30)
-        cooling = timedelta(minutes=20)
-        lead = prep + cooling
+        # 1000 over 2 hours plus the buffer is 550 an hour, so 4000 lasts 4000 / 550 hours
+        hours_left = timedelta(hours=4000 / 550)
+        lead_time = self.tea.preparation_time + self.tea.cooling_time
 
-        def status_for(start_offset):
-            return start_by(now + lead + start_offset, prep, cooling, now)[1]
+        self.assertGreaterEqual(start_time, before + hours_left - lead_time - timedelta(seconds=1))
+        self.assertLessEqual(start_time, after + hours_left - lead_time + timedelta(seconds=1))
 
-        self.assertEqual(status_for(timedelta(minutes=-5)), "late")
-        self.assertEqual(status_for(timedelta(0)), "late")
-        self.assertEqual(status_for(timedelta(minutes=1)), "start_soon")
-        self.assertEqual(status_for(timedelta(minutes=20)), "start_soon")
-        self.assertEqual(status_for(timedelta(minutes=21)), "on_track")
-        self.assertEqual(start_by(None, prep, cooling, now), (None, "no_runout"))
-
-    def test_recommend_half_batch_when_half_is_enough(self):
-        fraction, waste = recommend_batch_fraction([], [Decimal("10")] * 10, Decimal("400"), 0, 100)
-
-        self.assertEqual(fraction, Decimal("0.5"))
-        self.assertEqual(waste, Decimal("0"))
-
-    def test_recommend_full_batch_when_half_runs_out(self):
-        fraction, _ = recommend_batch_fraction([], [Decimal("30")] * 10, Decimal("400"), 0, 100)
-
-        self.assertEqual(fraction, Decimal("1"))
+    def test_start_by_is_none_with_no_demand(self):
+        self.assertIsNone(get_start_by(self.tea))
 
 
-class ItemForecastTests(TestCase):
-    def test_new_shop_uses_flat_rate_and_finds_runout(self):
-        data = make_shop("Pearl House", "owner@pearl.test")
-
-        # 3000 ml sold in the last few minutes leaves 1000 ml in the only batch
-        create_order(data["shop"], order_items(data["menu_item"], 6))
-
-        now = timezone.now()
-        forecast = get_item_forecast(data["tea"], now)
-
-        # 3000 ml over 4 hours, plus the 10% buffer, is 825 ml an hour, so 1000 ml lasts under 2 hours
-        self.assertEqual(forecast["method"], "flat_rate")
-        self.assertIsNotNone(forecast["runout_at"])
-        self.assertLess(forecast["runout_at"], now + timedelta(hours=2))
-        self.assertEqual(forecast["start_by"], forecast["runout_at"] - data["tea"].preparation_time)
-        self.assertIn(forecast["recommended_batch_fraction"], [Decimal("0.5"), Decimal("1")])
-
-    def test_no_sales_means_no_runout(self):
-        data = make_shop("Pearl House", "owner@pearl.test")
-
-        forecast = get_item_forecast(data["tea"], timezone.now())
-
-        self.assertEqual(forecast["status"], "no_runout")
-        self.assertIsNone(forecast["recommended_batch_fraction"])
-
-
-class ForecastApiTests(APITestCase):
-    def test_requires_login(self):
-        self.assertEqual(self.client.get("/api/forecast/").status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_only_returns_logged_in_shops_items(self):
+class RecommendationsApiTests(APITestCase):
+    def test_includes_start_by_and_only_shows_own_shop(self):
         a = make_shop("Shop A", "a@shop.test")
         make_shop("Shop B", "b@shop.test")
 
         self.client.force_login(a["user"])
-        response = self.client.get("/api/forecast/")
+        response = self.client.get("/api/recommendations/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["timezone"], a["shop"].timezone)
-        self.assertEqual([row["id"] for row in response.data["forecasts"]], [a["tea"].id])
+        self.assertEqual([row["id"] for row in response.data], [a["tea"].id])
+        self.assertIn("start_by", response.data[0])
+        self.assertIsNone(response.data[0]["start_by"])
