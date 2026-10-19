@@ -27,4 +27,5 @@ urlpatterns = [
     # Dashboard
     path("inventory/", views.inventory_summary_view),
     path("recommendations/", views.recommendations_view),
+    path("forecast/", views.forecast_view),
 ]

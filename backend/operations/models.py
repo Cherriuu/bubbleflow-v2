@@ -1,4 +1,5 @@
 # This file defines the database models for the operations app.
+from datetime import timedelta
 from django.conf import settings
 from django.db import models
 from decimal import Decimal
@@ -80,6 +81,8 @@ class PreparedItem(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     requires_cooling = models.BooleanField(default=False)
+    # How long a batch must cool after it's prepared before it can be served
+    cooling_time = models.DurationField(default=timedelta(0))
 
     class Meta:
         constraints = [

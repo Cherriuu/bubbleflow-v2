@@ -1,5 +1,6 @@
 # Handles HTTP requests and responses and API endpoints for the operations app.
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -44,6 +45,7 @@ from .services.orders import (
 )
 
 from .services.forecasting import recommend_production
+from .services.forecast import STATUS_ORDER, get_item_forecast
 
 
 # Check that the API is running
@@ -372,7 +374,7 @@ def inventory_summary_view(request):
     return Response(inventory)
 
 
-# Get production recommendations
+# Old forecaster, kept only as the backtest baseline.
 @api_view(["GET"])
 def recommendations_view(request):
     items = PreparedItem.objects.filter(
@@ -393,3 +395,40 @@ def recommendations_view(request):
         })
 
     return Response(recommendations)
+
+
+# Get when each prepared item runs out and when to start the next batch, most urgent first
+@api_view(["GET"])
+def forecast_view(request):
+    shop = request.user.shop
+    now = timezone.now()
+
+    items = PreparedItem.objects.filter(
+        shop=shop,
+        is_active=True
+    ).select_related("shop")
+
+    forecasts = []
+
+    for item in items:
+        forecast = get_item_forecast(item, now)
+
+        forecasts.append({
+            "id": item.id,
+            "name": item.name,
+            "base_unit": item.base_unit,
+            **forecast
+        })
+
+    # Sort by status first, then by the earliest start-by time within each status
+    forecasts.sort(
+        key=lambda forecast: (
+            STATUS_ORDER.index(forecast["status"]),
+            forecast["start_by"] or now
+        )
+    )
+
+    return Response({
+        "timezone": shop.timezone,
+        "forecasts": forecasts
+    })

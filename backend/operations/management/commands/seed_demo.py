@@ -193,6 +193,10 @@ class Command(BaseCommand):
                     ),
                     "default_shelf_life": data["shelf_life"],
                     "requires_cooling": data["requires_cooling"],
+                    # Items that need cooling take 20 minutes to cool before serving
+                    "cooling_time": timedelta(
+                        minutes=20 if data["requires_cooling"] else 0
+                    ),
                     "is_active": True,
                 },
             )

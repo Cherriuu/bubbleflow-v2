@@ -2,6 +2,8 @@
 # They also provide deserialization, allowing parsed data to be converted back into complex types.
 # What we define in our serializers is the structure of the data that will be sent to and receieved from the frontend.
 
+from decimal import Decimal
+
 from rest_framework import serializers
 from .services.inventory import get_batch_balance
 
@@ -191,7 +193,7 @@ class CreateBatchSerializer(serializers.Serializer):
     batch_fraction = serializers.DecimalField(
         max_digits=5,
         decimal_places=3,
-        min_value=0.001
+        min_value=Decimal("0.001")
     )
     started_at = serializers.DateTimeField()
 
