@@ -1,6 +1,15 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/auth";
 
 function Sidebar() {
+  const { shop, logout } = useAuth();
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    await logout();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <aside className="flex min-h-screen w-64 flex-col border-r border-stone-200 bg-[#FFFDF7] px-5 py-8">
       
@@ -39,6 +48,17 @@ function Sidebar() {
         </NavLink>
 
       </nav>
+
+      {/* Logged-in shop */}
+      <div className="mt-auto flex flex-col gap-2 border-t border-stone-200 pt-5">
+        <p className="truncate px-3 text-sm font-medium text-stone-400">
+          {shop?.name}
+        </p>
+
+        <button type="button" onClick={handleLogout} className="flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-base font-medium text-stone-700 hover:bg-[#dcecee] hover:text-stone-900">
+          Log out
+        </button>
+      </div>
     </aside>
   );
 }

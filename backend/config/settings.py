@@ -75,6 +75,41 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
 ]
 
+
+# Authentication
+# The frontend and API share a domain, so the API uses Django's session cookie instead of tokens.
+# Every endpoint requires a logged-in shop unless the view says otherwise (health check and the login views).
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "operations.permissions.IsShopUser",
+    ],
+    # Limits how often logged-out visitors can try to log in or register
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "10/minute",
+    },
+}
+
+# Cookies are only sent over HTTPS in production. Lax stops other sites from sending them on POST requests.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# Vercel ends HTTPS at its proxy and tells Django the original scheme in this header
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Full origins allowed to send POST requests, comma separated (e.g. https://bubbleflow.vercel.app)
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [

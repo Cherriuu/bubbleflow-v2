@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../api/client";
 
 
 type Batch = {
@@ -43,7 +44,7 @@ function Batches() {
 
 
     async function getBatches() {
-        const response = await fetch(
+        const response = await apiFetch(
             "/api/batches/"
         );
 
@@ -54,7 +55,7 @@ function Batches() {
 
     useEffect(() => {
         async function getPreparedItems() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/prepared-items/"
             );
 
@@ -64,7 +65,7 @@ function Batches() {
 
 
         async function getStorageLocations() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/storage-locations/"
             );
 
@@ -93,7 +94,7 @@ function Batches() {
         setMessage("");
 
         try {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/batches/create/",
                 {
                     method: "POST",
@@ -132,7 +133,7 @@ function Batches() {
 
     async function markBatchAsReady(batchId: number) {
         try {
-            const response = await fetch(
+            const response = await apiFetch(
                 `/api/batches/${batchId}/ready/`,
                 {
                     method: "POST",

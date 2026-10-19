@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../api/client";
 
 import InventoryRow from "../components/inventory_row";
 
@@ -87,7 +88,7 @@ function Overview() {
 
     useEffect(() => {
         async function getInventory() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/inventory/"
             );
 
@@ -97,7 +98,7 @@ function Overview() {
 
 
         async function getOrders() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/orders/"
             );
 
@@ -107,7 +108,7 @@ function Overview() {
 
 
         async function getBatches() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/batches/"
             );
 
@@ -117,7 +118,7 @@ function Overview() {
 
 
         async function getPreparedItems() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/prepared-items/"
             );
 
@@ -127,7 +128,7 @@ function Overview() {
 
 
         async function getMenuItems() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/menu-items/"
             );
 
@@ -137,7 +138,7 @@ function Overview() {
 
 
         async function getRecommendations() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/recommendations/"
             );
 

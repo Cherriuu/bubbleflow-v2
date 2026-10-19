@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { apiFetch } from "../api/client";
 
 {/* Define the types for the data */}
 
@@ -56,7 +57,7 @@ function Orders() {
 
         async function getOrders() {
 
-            const response = await fetch(
+            const response = await apiFetch(
 
                 "/api/orders/"
 
@@ -77,7 +78,7 @@ function Orders() {
 
         async function getMenuItems() {
 
-            const response = await fetch(
+            const response = await apiFetch(
 
                 "/api/menu-items/"
 
@@ -96,7 +97,7 @@ function Orders() {
 
         async function getPreparedItems() {
 
-            const response = await fetch(
+            const response = await apiFetch(
 
                 "/api/prepared-items/"
 
@@ -195,7 +196,7 @@ function Orders() {
 
         try {
 
-            const response = await fetch(
+            const response = await apiFetch(
 
                 "/api/orders/create/",
 
@@ -295,7 +296,7 @@ function Orders() {
 
         try {
 
-            const response = await fetch(
+            const response = await apiFetch(
 
                 `/api/orders/${orderId}/complete/`,
 

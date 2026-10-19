@@ -1,7 +1,8 @@
 # Handles HTTP requests and responses and API endpoints for the operations app.
 from django.shortcuts import get_object_or_404
 
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -47,6 +48,7 @@ from .services.forecasting import recommend_production
 
 # Check that the API is running
 @api_view(["GET"])
+@permission_classes([AllowAny]) # The only data endpoint that doesn't need a logged-in shop
 def health_check(request):
     return Response({"status": "ok"})
 
@@ -54,8 +56,10 @@ def health_check(request):
 # Get all prepared items
 @api_view(["GET"]) # Only accept GET requests for this endpoint
 def prepared_items(request): # Request is the HTTP request object that contains all the information about the incoming request
-    # Get all prepared items from the database using Django ORM
-    items = PreparedItem.objects.all()
+    # Get the logged-in shop's prepared items from the database using Django ORM
+    items = PreparedItem.objects.filter(
+        shop=request.user.shop
+    )
 
     # Serialize the items queryset to simple Python data types that can be rendered into JSON
     serializer = PreparedItemSerializer(
@@ -70,7 +74,9 @@ def prepared_items(request): # Request is the HTTP request object that contains 
 # Get all storage locations
 @api_view(["GET"])
 def storage_locations(request):
-    locations = StorageLocation.objects.all()
+    locations = StorageLocation.objects.filter(
+        shop=request.user.shop
+    )
 
     serializer = StorageLocationSerializer(
         locations,
@@ -82,7 +88,9 @@ def storage_locations(request):
 
 @api_view(["GET"])
 def batches(request):
-    batches = Batch.objects.all()
+    batches = Batch.objects.filter(
+        prepared_item__shop=request.user.shop
+    )
 
     for batch in batches:
         update_batch_status(batch)
@@ -98,7 +106,9 @@ def batches(request):
 # Get all menu items
 @api_view(["GET"])
 def menu_items(request):
-    items = MenuItem.objects.all()
+    items = MenuItem.objects.filter(
+        shop=request.user.shop
+    )
 
     serializer = MenuItemSerializer(
         items,
@@ -111,7 +121,9 @@ def menu_items(request):
 # Get all orders
 @api_view(["GET"])
 def orders(request):
-    orders = Order.objects.all()
+    orders = Order.objects.filter(
+        shop=request.user.shop
+    )
 
     serializer = OrderSerializer(
         orders,
@@ -141,6 +153,7 @@ def create_batch_view(request):
     # Django ORM takes the validated data and tries to save it to the database using the defined models in models.py
     try:
         batch = create_batch(
+            shop=request.user.shop,
             prepared_item=data["prepared_item"],
             storage_location=data["storage_location"],
             batch_fraction=data["batch_fraction"],
@@ -167,12 +180,22 @@ def create_batch_view(request):
 # Mark a preparing batch as ready
 @api_view(["POST"])
 def mark_batch_ready_view(request, batch_id):
+    # Returns a 404 Not Found response if the batch belongs to another shop
     batch = get_object_or_404(
         Batch,
-        id=batch_id
+        id=batch_id,
+        prepared_item__shop=request.user.shop
     )
 
-    batch = mark_batch_ready(batch)
+    # Returns a 400 Bad Request response if the batch is not preparing or cooling
+    try:
+        batch = mark_batch_ready(batch)
+
+    except ValueError as error:
+        return Response(
+            {"error": str(error)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     return Response(
         BatchSerializer(batch).data,
@@ -182,9 +205,11 @@ def mark_batch_ready_view(request, batch_id):
 # Record wasted inventory
 @api_view(["POST"])
 def record_waste_view(request, batch_id):
+    # Returns a 404 Not Found response if the batch belongs to another shop
     batch = get_object_or_404(
         Batch,
-        id=batch_id
+        id=batch_id,
+        prepared_item__shop=request.user.shop
     )
 
     input_serializer = WasteSerializer(
@@ -218,9 +243,11 @@ def record_waste_view(request, batch_id):
 # Correct inventory manually
 @api_view(["POST"])
 def record_correction_view(request, batch_id):
+    # Returns a 404 Not Found response if the batch belongs to another shop
     batch = get_object_or_404(
         Batch,
-        id=batch_id
+        id=batch_id,
+        prepared_item__shop=request.user.shop
     )
 
     input_serializer = CorrectionSerializer(
@@ -265,8 +292,9 @@ def create_order_view(request):
     data = input_serializer.validated_data
 
     try:
+        # Always the logged-in shop, never a shop sent in the request body
         order, warnings = create_order(
-            shop=data["shop"],
+            shop=request.user.shop,
             items=data["items"]
         )
 
@@ -290,9 +318,11 @@ def create_order_view(request):
 # Complete an order and consume inventory
 @api_view(["POST"])
 def complete_order_view(request, order_id):
+    # Returns a 404 Not Found response if the order belongs to another shop
     order = get_object_or_404(
         Order,
-        id=order_id
+        id=order_id,
+        shop=request.user.shop
     )
 
     try:
@@ -316,6 +346,7 @@ def complete_order_view(request, order_id):
 @api_view(["GET"])
 def inventory_summary_view(request):
     items = PreparedItem.objects.filter(
+        shop=request.user.shop,
         is_active=True
     )
 
@@ -342,6 +373,7 @@ def inventory_summary_view(request):
 @api_view(["GET"])
 def recommendations_view(request):
     items = PreparedItem.objects.filter(
+        shop=request.user.shop,
         is_active=True
     )
 

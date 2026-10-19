@@ -1,4 +1,5 @@
  import { useEffect, useState } from "react";
+import { apiFetch } from "../api/client";
 
 
 type InventoryItem = {
@@ -38,7 +39,7 @@ function Production() {
     
     useEffect(() => {
         async function getInventory() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/inventory/"
             );
 
@@ -49,7 +50,7 @@ function Production() {
 
 
         async function getRecommendations() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/recommendations/"
             );
 
@@ -60,7 +61,7 @@ function Production() {
 
 
         async function getPreparedItems() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/prepared-items/"
             );
 

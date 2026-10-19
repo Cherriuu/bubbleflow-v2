@@ -1,6 +1,8 @@
 from datetime import timedelta
 from decimal import Decimal
+import secrets
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -17,6 +19,7 @@ from ...models import (
 
 
 from ...services.inventory import create_batch, mark_batch_ready
+from ...auth_views import DEMO_EMAIL
 
 
 class Command(BaseCommand):
@@ -25,17 +28,51 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
 
         # --------------------------------------------------
-        # SHOP
+        # DEMO USER
+        # --------------------------------------------------
+        #
+        # The "Try the demo" button logs in as this user,
+        # so nobody needs its password. It gets a random
+        # one that is never printed or stored anywhere.
         # --------------------------------------------------
 
-        shop, _ = Shop.objects.update_or_create(
-            name="BubbleFlow Demo",
-            defaults={
-                "timezone": "America/New_York",
-                "inventory_buffer_percent": Decimal("10.00"),
-                "low_stock_threshold_servings": 15,
-            },
+        User = get_user_model()
+
+        demo_user, created = User.objects.get_or_create(
+            username=DEMO_EMAIL,
+            defaults={"email": DEMO_EMAIL},
         )
+
+        if created:
+            demo_user.set_password(secrets.token_urlsafe(32))
+            demo_user.save()
+
+        self.stdout.write("Seeded demo user")
+
+
+        # --------------------------------------------------
+        # SHOP
+        # --------------------------------------------------
+        #
+        # Look the shop up by its owner first, so a
+        # registered shop that happens to be named
+        # "BubbleFlow Demo" is never taken over.
+        # --------------------------------------------------
+
+        shop = (
+            Shop.objects.filter(owner=demo_user).first()
+            or Shop.objects.filter(
+                name="BubbleFlow Demo",
+                owner__isnull=True,
+            ).first()
+            or Shop(name="BubbleFlow Demo")
+        )
+
+        shop.owner = demo_user
+        shop.timezone = "America/New_York"
+        shop.inventory_buffer_percent = Decimal("10.00")
+        shop.low_stock_threshold_servings = 15
+        shop.save()
 
         self.stdout.write("Seeded shop")
 
@@ -231,6 +268,7 @@ class Command(BaseCommand):
                 location = refrigerator
 
             batch = create_batch(
+                shop=shop,
                 prepared_item=item,
                 storage_location=location,
                 batch_fraction=Decimal("1.0"),

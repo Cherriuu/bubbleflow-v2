@@ -30,13 +30,14 @@ def update_batch_status(batch):
 
 # Transcation atomic ensures that all database operations within the function succeed or fail as a single unit, maintaining data integrity.
 @transaction.atomic
-def create_batch(prepared_item, storage_location, batch_fraction, started_at):
+def create_batch(shop, prepared_item, storage_location, batch_fraction, started_at):
     if batch_fraction <= 0:
         raise ValueError("Batch fraction must be greater than zero.")
 
-    if storage_location.shop != prepared_item.shop:
+    # The shop is the logged-in shop, so this also stops a shop from making batches with another shop's items
+    if prepared_item.shop != shop or storage_location.shop != shop:
         raise ValueError(
-            "Storage location and prepared item must belong to the same shop."
+            "Storage location and prepared item must belong to your shop."
         )
 
     actual_preparation_time = (

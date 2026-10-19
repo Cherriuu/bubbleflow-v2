@@ -1,4 +1,5 @@
 import InventoryRow from "../components/inventory_row";
+import { apiFetch } from "../api/client";
 import { useEffect, useState } from "react";
 
 type InventoryItem = {
@@ -18,7 +19,7 @@ function Inventory() {
     
     useEffect(() => {
         async function getInventory() {
-            const response = await fetch(
+            const response = await apiFetch(
                 "/api/inventory/"
             );
 

@@ -250,14 +250,31 @@ class OrderItemInputSerializer(serializers.Serializer):
 
 
 # Validate order input
+# The shop is not part of the input. The view always uses the logged-in user's shop, so any shop_id in the body is ignored.
 class CreateOrderSerializer(serializers.Serializer):
-    # Defines that when the frontend gives us a shop_id, it will be used to look up the corresponding Shop object in the queryset of all Shop objects. The source="shop" part means that the validated Shop object will be assigned to the shop field of the Order model when creating a new order.
-    shop_id = serializers.PrimaryKeyRelatedField(
-        queryset=Shop.objects.all(),
-        source="shop"
-    )
-
     items = OrderItemInputSerializer(
         many=True,
         allow_empty=False
+    )
+
+
+# Validate shop registration input
+class RegisterSerializer(serializers.Serializer):
+    shop_name = serializers.CharField(
+        max_length=120
+    )
+    # The email is also the username, which Django limits to 150 characters
+    email = serializers.EmailField(
+        max_length=150
+    )
+    password = serializers.CharField(
+        write_only=True
+    )
+
+
+# Validate login input
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(
+        write_only=True
     )

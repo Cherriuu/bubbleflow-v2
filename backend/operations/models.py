@@ -1,8 +1,17 @@
 # This file defines the database models for the operations app.
+from django.conf import settings
 from django.db import models
 from decimal import Decimal
 
 class Shop(models.Model):
+    # The login account for the shop, shared by its employees. If the user is deleted, the shop is deleted too.
+    owner = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="shop"
+    )
     name = models.CharField(max_length=120)
     timezone = models.CharField(max_length=64, default="America/New_York")
     # Buffer percentage to account for unexpected usage or spoilage
