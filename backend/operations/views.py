@@ -273,6 +273,9 @@ def record_correction_view(request, batch_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # A correction can change the batch's status (depleted or ready again), so reload it
+    batch.refresh_from_db()
+
     serializer = BatchSerializer(batch)
 
     return Response(serializer.data)

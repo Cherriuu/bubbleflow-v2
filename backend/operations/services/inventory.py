@@ -170,7 +170,8 @@ def get_inventory_from_batches(batches):
     return total
 
 # Consume a specific quantity from a list of batches, following the FEFO principle.
-def consume_from_batches(batches, quantity):
+# When the quantity is for an order, pass its order_item so each event records which drink used it.
+def consume_from_batches(batches, quantity, order_item=None):
     if quantity <= 0:
         raise ValueError(
             "Quantity must be greater than zero."
@@ -191,6 +192,7 @@ def consume_from_batches(batches, quantity):
 
         InventoryEvent.objects.create(
             batch=batch,
+            order_item=order_item,
             event_type=EventType.ORDER_CONSUMPTION,
             quantity_delta=-amount_to_consume,
             reason="Consumed for order",
@@ -251,6 +253,15 @@ def record_correction(batch, quantity, reason):
             "Quantity must be non-zero."
         )
 
+    new_balance = get_batch_balance(
+        locked_batch
+    ) + quantity
+
+    if new_balance < 0:
+        raise ValueError(
+            "Correction would make the batch balance negative."
+        )
+
     InventoryEvent.objects.create(
         batch=locked_batch,
         event_type=EventType.CORRECTION,
@@ -258,32 +269,53 @@ def record_correction(batch, quantity, reason):
         reason=reason,
     )
 
-    return get_batch_balance(
-        locked_batch
-    )
+    # A depleted batch that gets stock back can be used again, as long as it hasn't expired
+    if (
+        locked_batch.status == BatchStatus.DEPLETED
+        and new_balance > 0
+        and locked_batch.expires_at > timezone.now()
+    ):
+        locked_batch.status = BatchStatus.READY
+        locked_batch.save()
+
+    # A ready batch corrected down to nothing is used up
+    elif locked_batch.status == BatchStatus.READY and new_balance == 0:
+        locked_batch.status = BatchStatus.DEPLETED
+        locked_batch.save()
+
+    return new_balance
 
 # Mark a batch as expired.
 @transaction.atomic
 def expire_batch(batch):
-    if batch.status != BatchStatus.READY:
-        raise ValueError(
-            "Only ready batches can be expired."
-        )
+    # Lock the batch so two requests can't expire it at the same time and write two EXPIRY events.
+    # The second request waits here, then sees the batch is already expired.
+    locked_batch = Batch.objects.select_for_update().get(
+        id=batch.id
+    )
 
-    balance = get_batch_balance(batch)
+    # Keep the caller's copy in sync, since the batches list serializes it after this
+    batch.status = locked_batch.status
+
+    if locked_batch.status != BatchStatus.READY:
+        return locked_batch
+
+    balance = get_batch_balance(locked_batch)
 
     if balance > 0:
         InventoryEvent.objects.create(
-            batch=batch,
+            batch=locked_batch,
             event_type=EventType.EXPIRY,
             quantity_delta=-balance,
             reason="Batch expired",
         )
 
-    batch.status = BatchStatus.EXPIRED
-    batch.save()
+    locked_batch.status = BatchStatus.EXPIRED
+    locked_batch.save()
 
-    return batch
+    batch.status = locked_batch.status
+
+    return locked_batch
 
 # Consume inventory following the FEFO (First Expired, First Out) principle.
 @transaction.atomic

@@ -87,13 +87,22 @@ def create_order(shop, items):
             prepared_item.id
         ] = batches
 
-    for prepared_item, required_quantity in sorted_requirements:
-        consume_from_batches(
-            locked_batches_by_item[
-                prepared_item.id
-            ],
-            required_quantity
+    # Every batch is locked and the totals are checked, so consume per drink.
+    # This links each ORDER_CONSUMPTION event to the order item that used it.
+    for order_item in order.order_items.all():
+        item_requirements = sorted(
+            calculate_order_item_requirements(order_item).items(),
+            key=lambda item: item[0].id
         )
+
+        for prepared_item, required_quantity in item_requirements:
+            consume_from_batches(
+                locked_batches_by_item[
+                    prepared_item.id
+                ],
+                required_quantity,
+                order_item=order_item
+            )
 
     warnings = []
 
@@ -102,7 +111,8 @@ def create_order(shop, items):
             prepared_item
         )
 
-        if servings_remaining <= 3:
+        # Same rule as get_inventory_status uses for "low"
+        if servings_remaining < shop.low_stock_threshold_servings:
             warnings.append(
                 f"Low stock: {prepared_item.name} has about "
                 f"{servings_remaining} servings remaining."
@@ -111,22 +121,16 @@ def create_order(shop, items):
     return order, warnings
 
 
+# Total prepared ingredients needed for the whole order
 def calculate_order_requirements(order):
     requirements = {}
 
     for order_item in order.order_items.all():
-        components = RecipeComponent.objects.filter(
-            menu_item=order_item.menu_item
+        item_requirements = calculate_order_item_requirements(
+            order_item
         )
 
-        for component in components:
-            prepared_item = component.prepared_item
-
-            required_quantity = (
-                component.quantity
-                * order_item.quantity
-            )
-
+        for prepared_item, required_quantity in item_requirements.items():
             if prepared_item in requirements:
                 requirements[
                     prepared_item
@@ -136,23 +140,51 @@ def calculate_order_requirements(order):
                     prepared_item
                 ] = required_quantity
 
-        for topping in order_item.toppings.all():
-            prepared_item = topping.prepared_item
+    return requirements
 
-            required_quantity = (
-                topping.quantity
-                * prepared_item.quantity_per_serving
-                * order_item.quantity
-            )
 
-            if prepared_item in requirements:
-                requirements[
-                    prepared_item
-                ] += required_quantity
-            else:
-                requirements[
-                    prepared_item
-                ] = required_quantity
+# Prepared ingredients needed for one drink in the order, including its toppings
+def calculate_order_item_requirements(order_item):
+    requirements = {}
+
+    components = RecipeComponent.objects.filter(
+        menu_item=order_item.menu_item
+    )
+
+    for component in components:
+        prepared_item = component.prepared_item
+
+        required_quantity = (
+            component.quantity
+            * order_item.quantity
+        )
+
+        if prepared_item in requirements:
+            requirements[
+                prepared_item
+            ] += required_quantity
+        else:
+            requirements[
+                prepared_item
+            ] = required_quantity
+
+    for topping in order_item.toppings.all():
+        prepared_item = topping.prepared_item
+
+        required_quantity = (
+            topping.quantity
+            * prepared_item.quantity_per_serving
+            * order_item.quantity
+        )
+
+        if prepared_item in requirements:
+            requirements[
+                prepared_item
+            ] += required_quantity
+        else:
+            requirements[
+                prepared_item
+            ] = required_quantity
 
     return requirements
 

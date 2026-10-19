@@ -227,6 +227,13 @@ class OrderItemTopping(models.Model):
         return f"{self.order_item} - {self.prepared_item.name}"
 
 
+# Raised when code tries to change or delete an inventory event
+class ImmutableEventError(Exception):
+    pass
+
+
+# Inventory events are an append-only ledger: a batch's balance is the sum of its events.
+# Mistakes are fixed by recording a CORRECTION event, never by editing or deleting history.
 class InventoryEvent(models.Model):
     # InventoryEvent -> Batch. Each inventory event is associated with a specific batch. Batch cannot be deleted if there are inventory events.
     batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="inventory_events")
@@ -248,6 +255,21 @@ class InventoryEvent(models.Model):
 
     def __str__(self):
         return f"Batch #{self.batch_id} - {self.event_type} ({self.quantity_delta})"
+
+    # Only new events can be saved. _state.adding is True until the event is first written to the database.
+    # Note: bulk QuerySet.update() and .delete() skip these methods, so don't use them on events either.
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ImmutableEventError(
+                "Inventory events cannot be changed. Record a CORRECTION event instead."
+            )
+
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ImmutableEventError(
+            "Inventory events cannot be deleted. Record a CORRECTION event instead."
+        )
 
 # We use foreign keys and on_delete to prevent orphaned records, child records whose parents are gone. The database ensures referential integrity, meaning that relationships between tables remain consistent.
 # We use on_delete=models.PROTECT for most foreign keys to prevent deletion of parent records if there are still child records referencing them. This ensures that we don't accidentally delete important data that is still in use. For example, we don't want to delete a PreparedItem if there are still Batches associated with it.

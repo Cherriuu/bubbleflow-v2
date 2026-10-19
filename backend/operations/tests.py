@@ -2,9 +2,12 @@
 # Run with: python manage.py test operations
 from datetime import timedelta
 from decimal import Decimal
+import threading
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import connection
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 from django.utils import timezone
 
 from rest_framework import status
@@ -14,6 +17,9 @@ from .auth_views import DEMO_EMAIL
 from .models import (
     Batch,
     BatchStatus,
+    EventType,
+    ImmutableEventError,
+    InventoryEvent,
     LocationType,
     MenuItem,
     Order,
@@ -24,7 +30,14 @@ from .models import (
     StorageLocation,
     Unit,
 )
-from .services.inventory import create_batch, mark_batch_ready
+from .services.inventory import (
+    create_batch,
+    expire_batch,
+    get_batch_balance,
+    mark_batch_ready,
+    record_correction,
+)
+from .services.orders import create_order
 
 
 PASSWORD = "tapioca-pearls-42"
@@ -93,6 +106,20 @@ def make_shop(name, email):
         "batch": batch,
         "order": order,
     }
+
+
+# The validated items list that create_order expects, one entry per quantity
+def order_items(menu_item, *quantities):
+    return [
+        {
+            "menu_item": menu_item,
+            "quantity": quantity,
+            "size": "medium",
+            "sugar_level": "100",
+            "ice_level": "regular_ice",
+        }
+        for quantity in quantities
+    ]
 
 
 def order_body(menu_item, **extra):
@@ -396,3 +423,180 @@ class CsrfTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class LedgerTests(TestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.batch = self.data["batch"]
+
+    def test_expiring_twice_writes_one_expiry_event(self):
+        # Two copies of the same batch, like two requests that both loaded it while it was ready
+        first = Batch.objects.get(id=self.batch.id)
+        second = Batch.objects.get(id=self.batch.id)
+
+        expire_batch(first)
+        expire_batch(second)
+
+        self.assertEqual(
+            self.batch.inventory_events.filter(event_type=EventType.EXPIRY).count(),
+            1
+        )
+        self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, BatchStatus.EXPIRED)
+
+    def test_correction_that_goes_negative_is_rejected(self):
+        with self.assertRaisesMessage(ValueError, "Correction would make the batch balance negative."):
+            record_correction(self.batch, Decimal("-4000.001"), "recount")
+
+        self.assertEqual(get_batch_balance(self.batch), Decimal("4000"))
+
+    def test_correction_to_zero_depletes_and_positive_correction_makes_ready(self):
+        record_correction(self.batch, Decimal("-4000"), "spilled everything")
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, BatchStatus.DEPLETED)
+
+        record_correction(self.batch, Decimal("500"), "found a pitcher")
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, BatchStatus.READY)
+        self.assertEqual(get_batch_balance(self.batch), Decimal("500"))
+
+    def test_positive_correction_on_expired_depleted_batch_stays_depleted(self):
+        record_correction(self.batch, Decimal("-4000"), "spilled everything")
+
+        Batch.objects.filter(id=self.batch.id).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
+
+        record_correction(self.batch, Decimal("500"), "found a pitcher")
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, BatchStatus.DEPLETED)
+
+    def test_order_consumes_earliest_expiring_batch_first(self):
+        tea = self.data["tea"]
+
+        # Started two days ago, so it expires about a day before the batch from make_shop
+        older = create_batch(
+            shop=self.data["shop"],
+            prepared_item=tea,
+            storage_location=self.data["location"],
+            batch_fraction=Decimal("1"),
+            started_at=timezone.now() - timedelta(days=2)
+        )
+        mark_batch_ready(older)
+
+        create_order(self.data["shop"], order_items(self.data["menu_item"], 1))
+
+        self.assertEqual(get_batch_balance(older), Decimal("3500"))
+        self.assertEqual(get_batch_balance(self.batch), Decimal("4000"))
+
+    def test_consumption_events_point_to_their_order_item(self):
+        order, _ = create_order(
+            self.data["shop"],
+            order_items(self.data["menu_item"], 1, 2)
+        )
+
+        events = InventoryEvent.objects.filter(event_type=EventType.ORDER_CONSUMPTION)
+
+        self.assertEqual(events.count(), 2)
+        self.assertFalse(events.filter(order_item__isnull=True).exists())
+
+        for order_item in order.order_items.all():
+            event = events.get(order_item=order_item)
+            self.assertEqual(event.quantity_delta, Decimal("-500") * order_item.quantity)
+
+    def test_inventory_events_cannot_be_changed_or_deleted(self):
+        event = self.batch.inventory_events.get()
+
+        event.quantity_delta = Decimal("999999")
+
+        with self.assertRaises(ImmutableEventError):
+            event.save()
+
+        with self.assertRaises(ImmutableEventError):
+            event.delete()
+
+        event.refresh_from_db()
+        self.assertEqual(event.quantity_delta, Decimal("4000"))
+
+    def test_low_stock_warning_uses_shop_threshold(self):
+        shop = self.data["shop"]
+        menu_item = self.data["menu_item"]
+
+        # After one drink: 3500 ml, minus the 10% buffer, is 6 servings of 500 ml
+        shop.low_stock_threshold_servings = 7
+        shop.save()
+
+        _, warnings = create_order(shop, order_items(menu_item, 1))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Black Tea", warnings[0])
+
+        # After two drinks: 5 servings, which is not below a threshold of 5
+        shop.low_stock_threshold_servings = 5
+        shop.save()
+
+        _, warnings = create_order(shop, order_items(menu_item, 1))
+        self.assertEqual(warnings, [])
+
+
+# Uses real transactions, so each thread's row locks actually block the other thread
+@skipUnlessDBFeature("has_select_for_update")
+class ConcurrencyTests(TransactionTestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.batch = self.data["batch"]
+
+    # Run the same function in two threads that start together
+    def run_twice_at_once(self, function):
+        barrier = threading.Barrier(2)
+        results = []
+
+        def worker():
+            try:
+                barrier.wait()
+                function()
+                results.append("ok")
+            except ValueError:
+                results.append("rejected")
+            finally:
+                # Each thread opens its own database connection
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join(timeout=30)
+
+        return results
+
+    def test_two_orders_for_the_last_serving(self):
+        # Leave exactly one 500 ml serving in the only batch
+        record_correction(self.batch, Decimal("-3500"), "leave one serving")
+
+        results = self.run_twice_at_once(
+            lambda: create_order(self.data["shop"], order_items(self.data["menu_item"], 1))
+        )
+
+        self.assertEqual(sorted(results), ["ok", "rejected"])
+        self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
+        self.assertEqual(Order.objects.filter(order_items__isnull=False).distinct().count(), 1)
+
+    def test_two_requests_expire_the_same_batch(self):
+        results = self.run_twice_at_once(
+            lambda: expire_batch(Batch.objects.get(id=self.batch.id))
+        )
+
+        self.assertEqual(results, ["ok", "ok"])
+        self.assertEqual(
+            self.batch.inventory_events.filter(event_type=EventType.EXPIRY).count(),
+            1
+        )
+        self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
