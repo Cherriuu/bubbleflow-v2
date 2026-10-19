@@ -24,6 +24,7 @@ from .serializers import (
     WasteSerializer,
     CorrectionSerializer,
     CreateOrderSerializer,
+    InventoryEventSerializer,
 )
 
 from .services.inventory import (
@@ -33,6 +34,7 @@ from .services.inventory import (
     get_inventory_status,
     record_waste,
     record_correction,
+    get_batch_balance,
     mark_batch_ready,
     update_batch_status,
 )
@@ -235,6 +237,9 @@ def record_waste_view(request, batch_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # Waste can use up the batch, so reload it to get the new status
+    batch.refresh_from_db()
+
     serializer = BatchSerializer(batch)
 
     return Response(serializer.data)
@@ -279,6 +284,30 @@ def record_correction_view(request, batch_id):
     serializer = BatchSerializer(batch)
 
     return Response(serializer.data)
+
+
+# Get a batch's inventory history, newest first, with its current balance and status
+@api_view(["GET"])
+def batch_events_view(request, batch_id):
+    # Returns a 404 Not Found response if the batch belongs to another shop
+    batch = get_object_or_404(
+        Batch,
+        id=batch_id,
+        prepared_item__shop=request.user.shop
+    )
+
+    events = batch.inventory_events.select_related(
+        "order_item"
+    ).order_by(
+        "-created_at",
+        "-id"
+    )
+
+    return Response({
+        "balance": get_batch_balance(batch),
+        "status": batch.status,
+        "events": InventoryEventSerializer(events, many=True).data
+    })
 
 
 # Create a customized order

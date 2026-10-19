@@ -237,9 +237,14 @@ def record_waste(batch, quantity, reason):
         reason=reason,
     )
 
-    return get_batch_balance(
-        locked_batch
-    )
+    new_balance = balance - quantity
+
+    # A ready batch with nothing left is used up
+    if locked_batch.status == BatchStatus.READY and new_balance == 0:
+        locked_batch.status = BatchStatus.DEPLETED
+        locked_batch.save()
+
+    return new_balance
 
 # Record a correction for a specific batch
 @transaction.atomic

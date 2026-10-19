@@ -95,18 +95,27 @@ class BatchSerializer(serializers.ModelSerializer):
         return get_batch_balance(batch)
 
 
-# Changes made to inventory
+# Changes made to inventory, shown in a batch's history
 class InventoryEventSerializer(serializers.ModelSerializer):
+    order_id = serializers.SerializerMethodField()
+
     class Meta:
         model = InventoryEvent
         fields = [
             "id",
-            "batch",
             "event_type",
             "quantity_delta",
             "reason",
             "created_at",
+            "order_id",
         ]
+
+    # The order that used this stock, or None for events that aren't from an order
+    def get_order_id(self, event):
+        if event.order_item is None:
+            return None
+
+        return event.order_item.order_id
 
 
 # Drinks or other products sold by the shop

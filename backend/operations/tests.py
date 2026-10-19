@@ -701,3 +701,78 @@ class RecommendationsApiTests(APITestCase):
         self.assertEqual([row["id"] for row in response.data], [a["tea"].id])
         self.assertIn("start_by", response.data[0])
         self.assertIsNone(response.data[0]["start_by"])
+
+
+class BatchLedgerApiTests(APITestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.batch = self.data["batch"]
+        self.client.force_login(self.data["user"])
+
+    def test_events_are_newest_first_with_order_id(self):
+        order, _ = create_order(self.data["shop"], order_items(self.data["menu_item"], 1))
+
+        self.client.post(
+            f"/api/batches/{self.batch.id}/waste/",
+            {"quantity": "100", "reason": "spilled"},
+            format="json"
+        )
+
+        response = self.client.get(f"/api/batches/{self.batch.id}/events/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Decimal(str(response.data["balance"])), Decimal("3400"))
+        self.assertEqual(response.data["status"], BatchStatus.READY)
+
+        events = response.data["events"]
+
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            [EventType.WASTE, EventType.ORDER_CONSUMPTION, EventType.BATCH_CREATED]
+        )
+        self.assertEqual(
+            [event["order_id"] for event in events],
+            [None, order.id, None]
+        )
+        self.assertEqual(events[0]["reason"], "spilled")
+
+    def test_events_for_other_shops_batch_return_404(self):
+        other = make_shop("Shop B", "b@shop.test")
+
+        response = self.client.get(f"/api/batches/{other['batch'].id}/events/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_wasting_whole_balance_depletes_batch(self):
+        response = self.client.post(
+            f"/api/batches/{self.batch.id}/waste/",
+            {"quantity": "4000", "reason": "dropped the pitcher"},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], BatchStatus.DEPLETED)
+
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, BatchStatus.DEPLETED)
+
+    def test_waste_larger_than_balance_returns_400(self):
+        response = self.client.post(
+            f"/api/batches/{self.batch.id}/waste/",
+            {"quantity": "4000.5", "reason": "too much"},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+
+    def test_correction_that_goes_negative_returns_400(self):
+        response = self.client.post(
+            f"/api/batches/{self.batch.id}/correction/",
+            {"quantity": "-5000", "reason": "recount"},
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "Correction would make the batch balance negative.")
+        self.assertEqual(get_batch_balance(self.batch), Decimal("4000"))

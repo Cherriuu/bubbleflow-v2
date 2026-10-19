@@ -17,6 +17,7 @@ urlpatterns = [
     path("batches/<int:batch_id>/ready/", views.mark_batch_ready_view),
     path("batches/<int:batch_id>/waste/", views.record_waste_view),
     path("batches/<int:batch_id>/correction/", views.record_correction_view),
+    path("batches/<int:batch_id>/events/", views.batch_events_view),
 
     # Order actions
     path("orders/create/", views.create_order_view),
