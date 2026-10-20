@@ -7,6 +7,7 @@ import threading
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import connection
+from django.db.models import Sum
 from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
 from django.utils import timezone
 
@@ -606,6 +607,89 @@ class ConcurrencyTests(TransactionTestCase):
             1
         )
         self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
+
+    # Run a function in many threads that start together, each calling it several times
+    def run_many_at_once(self, function, thread_count, attempts_per_thread):
+        barrier = threading.Barrier(thread_count)
+        results = []
+
+        # Only one thread at a time may add to the shared results list
+        results_lock = threading.Lock()
+
+        def worker():
+            try:
+                barrier.wait()
+
+                for _ in range(attempts_per_thread):
+                    try:
+                        function()
+                        result = "ok"
+                    except ValueError:
+                        result = "rejected"
+
+                    with results_lock:
+                        results.append(result)
+            finally:
+                # Each thread opens its own database connection
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(thread_count)]
+
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join(timeout=60)
+
+        return results
+
+    def test_rush_never_oversells(self):
+        SERVINGS_IN_STOCK = 100
+        THREAD_COUNT = 20
+        ATTEMPTS_PER_THREAD = 10
+
+        SERVING_ML = Decimal("500")
+        TOTAL_ATTEMPTS = THREAD_COUNT * ATTEMPTS_PER_THREAD
+        STOCK_ML = SERVINGS_IN_STOCK * SERVING_ML
+
+        # make_shop creates one empty order of its own during setup
+        ORDERS_FROM_SETUP = 1
+
+        # The batch starts at 4,000 ml, so add the difference to reach exactly 50,000 ml
+        record_correction(
+            self.batch,
+            STOCK_ML - get_batch_balance(self.batch),
+            "stock up for the rush"
+        )
+        self.assertEqual(get_batch_balance(self.batch), STOCK_ML)
+
+        results = self.run_many_at_once(
+            lambda: create_order(self.data["shop"], order_items(self.data["menu_item"], 1)),
+            THREAD_COUNT,
+            ATTEMPTS_PER_THREAD
+        )
+
+        # Every attempt finished, and each one either sold a drink or was turned away
+        self.assertEqual(len(results), TOTAL_ATTEMPTS)
+        self.assertEqual(results.count("ok"), SERVINGS_IN_STOCK)
+        self.assertEqual(results.count("rejected"), TOTAL_ATTEMPTS - SERVINGS_IN_STOCK)
+
+        # Exactly sold out, never below zero
+        self.assertEqual(get_batch_balance(self.batch), Decimal("0"))
+
+        consumed = self.batch.inventory_events.filter(
+            event_type=EventType.ORDER_CONSUMPTION
+        ).aggregate(
+            total=Sum("quantity_delta")
+        )["total"]
+        self.assertEqual(consumed, -STOCK_ML)
+
+        # Rejected orders were rolled back completely, so no empty Order rows were left behind
+        self.assertEqual(
+            Order.objects.filter(order_items__isnull=False).distinct().count(),
+            SERVINGS_IN_STOCK
+        )
+        self.assertEqual(Order.objects.count(), SERVINGS_IN_STOCK + ORDERS_FROM_SETUP)
 
 
 # A depleted batch that holds past sales, so the history doesn't change the shop's current inventory
