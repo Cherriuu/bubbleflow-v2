@@ -24,6 +24,8 @@ from .models import (
     LocationType,
     MenuItem,
     Order,
+    OrderItem,
+    OrderItemTopping,
     OrderStatus,
     PreparedItem,
     RecipeComponent,
@@ -1069,3 +1071,73 @@ class RegistrationSetupTests(APITestCase):
             list(shop.storage_locations.values_list("name", "location_type")),
             [("Main Refrigerator", LocationType.REFRIGERATOR)]
         )
+
+
+class OrdersListTests(APITestCase):
+    def setUp(self):
+        # make_shop also creates one pending order, placed today
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.client.force_login(self.data["user"])
+
+    # Create an order for the shop, moved to a past time if one is given
+    def make_order(self, status, when=None):
+        order = Order.objects.create(shop=self.data["shop"], status=status)
+
+        if when is not None:
+            # Bulk update is only used here to backdate test data, since created_at is set automatically
+            Order.objects.filter(pk=order.pk).update(created_at=when)
+
+        return order
+
+    def test_lists_todays_orders_and_older_pending_orders(self):
+        three_days_ago = timezone.now() - timedelta(days=3)
+
+        completed_today = self.make_order(OrderStatus.COMPLETED)
+        pending_earlier = self.make_order(OrderStatus.PENDING, three_days_ago)
+        completed_earlier = self.make_order(OrderStatus.COMPLETED, three_days_ago)
+        other_shops_order = make_shop("Shop B", "b@shop.test")["order"]
+
+        response = self.client.get("/api/orders/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        ids = [order["id"] for order in response.data]
+
+        self.assertEqual(
+            set(ids),
+            {self.data["order"].id, completed_today.id, pending_earlier.id}
+        )
+        self.assertNotIn(completed_earlier.id, ids)
+        self.assertNotIn(other_shops_order.id, ids)
+
+        # Newest first, so the order from three days ago comes last
+        self.assertEqual(ids, [completed_today.id, self.data["order"].id, pending_earlier.id])
+
+    def test_query_count_does_not_grow_with_orders(self):
+        pearls = PreparedItem.objects.create(
+            shop=self.data["shop"],
+            name="Tapioca Pearls",
+            base_unit=Unit.GRAM,
+            default_batch_quantity=Decimal("2000"),
+            quantity_per_serving=Decimal("60"),
+            preparation_time=timedelta(minutes=45),
+            default_shelf_life=timedelta(hours=4),
+            is_topping=True
+        )
+
+        # Ten orders with two drinks each, and a topping on every drink
+        for _ in range(10):
+            order = self.make_order(OrderStatus.COMPLETED)
+
+            for _ in range(2):
+                order_item = OrderItem.objects.create(order=order, menu_item=self.data["menu_item"])
+                OrderItemTopping.objects.create(order_item=order_item, prepared_item=pearls)
+
+        # Session, user, shop, then one query each for orders, their items, and the items' toppings.
+        # Without prefetch_related this would be one more query per order and per drink (30 more here).
+        with self.assertNumQueries(6):
+            response = self.client.get("/api/orders/")
+
+        self.assertEqual(len(response.data), 11)
+        self.assertEqual(len(response.data[0]["order_items"]), 2)
+        self.assertEqual(len(response.data[0]["order_items"][0]["toppings"]), 1)

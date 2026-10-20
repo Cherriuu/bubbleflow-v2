@@ -230,11 +230,12 @@ function Orders() {
 
 
 
+            {/* The list is newest first, so the new order goes on top */}
             setOrders(prevOrders => [
 
-                ...prevOrders,
+                data.order,
 
-                data.order
+                ...prevOrders
 
             ]);
 

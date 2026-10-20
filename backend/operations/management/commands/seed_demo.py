@@ -20,6 +20,7 @@ from ...models import (
 
 from ...services.inventory import create_batch, mark_batch_ready
 from ...auth_views import DEMO_EMAIL
+from ..demo_history import HISTORY_DAYS, seed_order_history
 
 
 class Command(BaseCommand):
@@ -284,6 +285,35 @@ class Command(BaseCommand):
 
             self.stdout.write(
                 f"Created READY batch for {name}"
+            )
+
+
+        # --------------------------------------------------
+        # ORDER HISTORY
+        # --------------------------------------------------
+        #
+        # Past orders give the recommender a sales pattern
+        # to learn from. Each run only adds the orders
+        # between the last seeded one and now, so rerunning
+        # never duplicates history and a later deploy
+        # catches the history up to the present.
+        # --------------------------------------------------
+
+        added_orders = seed_order_history(
+            shop,
+            now,
+            refrigerator,
+            prep_station,
+        )
+
+        if added_orders:
+            self.stdout.write(
+                f"Added {added_orders} past orders "
+                f"(up to {HISTORY_DAYS} days of history)"
+            )
+        else:
+            self.stdout.write(
+                "Order history already up to date - skipped"
             )
 
 

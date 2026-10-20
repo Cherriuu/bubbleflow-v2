@@ -1,5 +1,10 @@
 # Handles HTTP requests and responses and API endpoints for the operations app.
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -12,6 +17,7 @@ from .models import (
     Batch,
     MenuItem,
     Order,
+    OrderStatus,
 )
 
 from .serializers import (
@@ -149,11 +155,27 @@ def menu_items(request):
     return Response(serializer.data)
 
 
-# Get all orders
+# Get today's orders plus any order still pending from an earlier day, newest first
 @api_view(["GET"])
 def orders(request):
+    shop = request.user.shop
+
+    # "Today" is the shop's local day. settings.TIME_ZONE is UTC, so a plain localdate() would roll over at 8pm in New York.
+    shop_timezone = ZoneInfo(shop.timezone)
+    today = timezone.localdate(timezone=shop_timezone)
+    day_start = datetime.combine(today, time.min, tzinfo=shop_timezone)
+    day_end = datetime.combine(today + timedelta(days=1), time.min, tzinfo=shop_timezone)
+
+    # Q objects joined with | mean "or": placed today, or still waiting to be completed
     orders = Order.objects.filter(
-        shop=request.user.shop
+        Q(created_at__gte=day_start, created_at__lt=day_end) | Q(status=OrderStatus.PENDING),
+        shop=shop
+    ).prefetch_related(
+        # Load every order's items and their toppings in two extra queries, instead of one query per order and per item
+        "order_items__toppings"
+    ).order_by(
+        "-created_at",
+        "-id"
     )
 
     serializer = OrderSerializer(
