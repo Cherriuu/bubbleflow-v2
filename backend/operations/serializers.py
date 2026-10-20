@@ -96,6 +96,10 @@ class BatchSerializer(serializers.ModelSerializer):
 
     # We also went to send over the current balance of the batch, which is not a field in the model, so we define a method to get it.
     def get_balance(self, batch):
+        # The batches list adds annotated_balance in its own query; a single batch is looked up here instead
+        if hasattr(batch, "annotated_balance"):
+            return batch.annotated_balance or Decimal("0")
+
         return get_batch_balance(batch)
 
 

@@ -3,6 +3,7 @@
 from datetime import timedelta
 from decimal import Decimal
 import threading
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -37,9 +38,11 @@ from .services.inventory import (
     create_batch,
     expire_batch,
     get_batch_balance,
+    get_item_inventory,
     mark_batch_ready,
     record_correction,
 )
+from .services.demo import refresh_demo_shop
 from .services.orders import create_order
 from .services.forecasting import (
     forecast_demand,
@@ -1141,3 +1144,145 @@ class OrdersListTests(APITestCase):
         self.assertEqual(len(response.data), 11)
         self.assertEqual(len(response.data[0]["order_items"]), 2)
         self.assertEqual(len(response.data[0]["order_items"][0]["toppings"]), 1)
+
+
+# Most refresh tests skip the order history, which plans three weeks of orders, to keep the suite fast
+NO_HISTORY = patch("operations.services.demo.seed_order_history", return_value=0)
+
+
+class DemoRefreshTests(TestCase):
+    def setUp(self):
+        self.data = make_shop("BubbleFlow Demo", DEMO_EMAIL)
+        self.tea = self.data["tea"]
+
+        # Use up the starting batch, and add one that already expired
+        self.starting_batch = self.data["batch"]
+        self.starting_batch.status = BatchStatus.DEPLETED
+        self.starting_batch.save()
+
+        Batch.objects.create(
+            prepared_item=self.tea,
+            storage_location=self.data["location"],
+            initial_quantity=Decimal("4000"),
+            status=BatchStatus.EXPIRED,
+            started_at=timezone.now() - timedelta(days=4),
+            expires_at=timezone.now() - timedelta(days=1)
+        )
+
+    def ready_batches(self):
+        return Batch.objects.filter(prepared_item=self.tea, status=BatchStatus.READY)
+
+    def test_creates_ready_batch_when_only_depleted_or_expired_batches_exist(self):
+        with NO_HISTORY:
+            restocked, _ = refresh_demo_shop(self.data["shop"])
+
+        self.assertEqual(restocked, ["Black Tea"])
+        self.assertEqual(self.ready_batches().count(), 1)
+        self.assertEqual(get_item_inventory(self.tea), self.tea.default_batch_quantity)
+
+    def test_running_twice_creates_no_duplicates(self):
+        refresh_demo_shop(self.data["shop"])
+
+        counts = (Batch.objects.count(), Order.objects.count(), InventoryEvent.objects.count())
+
+        restocked, added_orders = refresh_demo_shop(self.data["shop"])
+
+        self.assertEqual((restocked, added_orders), ([], 0))
+        self.assertEqual((Batch.objects.count(), Order.objects.count(), InventoryEvent.objects.count()), counts)
+        self.assertEqual(self.ready_batches().count(), 1)
+
+    def test_demo_login_leaves_every_active_item_with_stock(self):
+        # An ingredient with no batches at all should be stocked too
+        PreparedItem.objects.create(
+            shop=self.data["shop"],
+            name="Tapioca Pearls",
+            base_unit=Unit.GRAM,
+            default_batch_quantity=Decimal("2000"),
+            quantity_per_serving=Decimal("60"),
+            preparation_time=timedelta(minutes=45),
+            default_shelf_life=timedelta(hours=4),
+            is_topping=True
+        )
+
+        with NO_HISTORY:
+            response = self.client.post("/api/auth/demo-login/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for item in PreparedItem.objects.filter(shop=self.data["shop"], is_active=True):
+            with self.subTest(item=item.name):
+                self.assertGreaterEqual(get_item_inventory(item), item.default_batch_quantity)
+
+
+class BatchesListTests(APITestCase):
+    def setUp(self):
+        self.data = make_shop("Pearl House", "owner@pearl.test")
+        self.client.force_login(self.data["user"])
+
+    # Create a batch for the shop's tea with a given status and expiry
+    def make_batch(self, status, expires_at):
+        return Batch.objects.create(
+            prepared_item=self.data["tea"],
+            storage_location=self.data["location"],
+            initial_quantity=Decimal("4000"),
+            status=status,
+            started_at=expires_at - timedelta(days=3),
+            expires_at=expires_at
+        )
+
+    def test_default_list_skips_old_history(self):
+        now = timezone.now()
+
+        ready = self.data["batch"]
+        depleted = self.make_batch(BatchStatus.DEPLETED, now - timedelta(days=5))
+        expired_long_ago = self.make_batch(BatchStatus.EXPIRED, now - timedelta(days=3))
+        expired_recently = self.make_batch(BatchStatus.EXPIRED, now - timedelta(hours=2))
+
+        preparing = create_batch(
+            shop=self.data["shop"],
+            prepared_item=self.data["tea"],
+            storage_location=self.data["location"],
+            batch_fraction=Decimal("1"),
+            started_at=now
+        )
+
+        response = self.client.get("/api/batches/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {batch["id"] for batch in response.data},
+            {ready.id, expired_recently.id, preparing.id}
+        )
+
+        # The balance comes from the annotation and still matches the ledger
+        ready_row = next(batch for batch in response.data if batch["id"] == ready.id)
+        self.assertEqual(Decimal(str(ready_row["balance"])), Decimal("4000"))
+
+        history = self.client.get("/api/batches/?include_history=true")
+
+        self.assertEqual(
+            {batch["id"] for batch in history.data},
+            {ready.id, depleted.id, expired_long_ago.id, expired_recently.id, preparing.id}
+        )
+
+    def test_query_count_does_not_grow_with_batches(self):
+        now = timezone.now()
+
+        for _ in range(10):
+            batch = create_batch(
+                shop=self.data["shop"],
+                prepared_item=self.data["tea"],
+                storage_location=self.data["location"],
+                batch_fraction=Decimal("1"),
+                started_at=now - self.data["tea"].preparation_time
+            )
+            mark_batch_ready(batch)
+
+        for _ in range(30):
+            self.make_batch(BatchStatus.DEPLETED, now - timedelta(days=5))
+
+        # Session, user, shop, the batches whose status may change, then the list with every balance
+        with self.assertNumQueries(5):
+            response = self.client.get("/api/batches/")
+
+        self.assertEqual(len(response.data), 11)

@@ -4,7 +4,6 @@ import secrets
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
 from ...models import (
     Shop,
@@ -14,13 +13,12 @@ from ...models import (
     Unit,
     MenuItem,
     RecipeComponent,
-    Batch,
 )
 
 
-from ...services.inventory import create_batch, mark_batch_ready
+from ...services.demo import refresh_demo_shop
 from ...auth_views import DEMO_EMAIL
-from ..demo_history import HISTORY_DAYS, seed_order_history
+from ..demo_history import HISTORY_DAYS
 
 
 class Command(BaseCommand):
@@ -246,65 +244,27 @@ class Command(BaseCommand):
 
 
         # --------------------------------------------------
-        # INITIAL INVENTORY
+        # STOCK AND ORDER HISTORY
         # --------------------------------------------------
         #
-        # Orders cannot consume inventory unless READY
-        # batches exist.
-        #
-        # Only create an initial batch if that item has
-        # no batches yet, so rerunning the seed command
-        # doesn't keep duplicating inventory.
+        # Give every ingredient at least a full batch of
+        # ready stock, and catch the past orders up to now.
+        # The demo login does the same thing, so the live
+        # demo stays stocked between deploys. Both steps
+        # only add what's missing, so rerunning is safe.
         # --------------------------------------------------
 
-        now = timezone.now()
+        restocked, added_orders = refresh_demo_shop(shop)
 
-        for name, item in prepared_items.items():
-
-            if Batch.objects.filter(prepared_item=item).exists():
-                self.stdout.write(
-                    f"Batch already exists for {name} - skipped"
-                )
-                continue
-
-            # Tapioca stays at the prep station.
-            if name == "Tapioca Pearls":
-                location = prep_station
-            else:
-                location = refrigerator
-
-            batch = create_batch(
-                shop=shop,
-                prepared_item=item,
-                storage_location=location,
-                batch_fraction=Decimal("1.0"),
-                started_at=now - item.preparation_time,
-            )
-
-            mark_batch_ready(batch)
-
+        for name in restocked:
             self.stdout.write(
                 f"Created READY batch for {name}"
             )
 
-
-        # --------------------------------------------------
-        # ORDER HISTORY
-        # --------------------------------------------------
-        #
-        # Past orders give the recommender a sales pattern
-        # to learn from. Each run only adds the orders
-        # between the last seeded one and now, so rerunning
-        # never duplicates history and a later deploy
-        # catches the history up to the present.
-        # --------------------------------------------------
-
-        added_orders = seed_order_history(
-            shop,
-            now,
-            refrigerator,
-            prep_station,
-        )
+        if not restocked:
+            self.stdout.write(
+                "Every ingredient has a full batch ready - skipped"
+            )
 
         if added_orders:
             self.stdout.write(

@@ -55,6 +55,9 @@ function Orders() {
     const [quantity, setQuantity] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    {/* The message under the order form: red for problems, pink for low-stock warnings */}
+    const [formMessage, setFormMessage] = useState<{ kind: "error" | "warning"; text: string } | null>(null);
+
     useEffect(() => {
 
         async function getOrders() {
@@ -115,10 +118,11 @@ function Orders() {
     }, []);
 
     async function createOrder() {
+        setFormMessage(null);
 
         if (newOrder === null) {
 
-            alert("Please select a drink.");
+            setFormMessage({ kind: "error", text: "Please select a drink." });
 
             return;
 
@@ -132,7 +136,7 @@ function Orders() {
 
         if (!selectedMenuItem) {
 
-            alert("Selected drink could not be found.");
+            setFormMessage({ kind: "error", text: "Selected drink could not be found." });
 
             return;
 
@@ -206,13 +210,9 @@ function Orders() {
 
             if (!response.ok) {
 
-                alert(
+                setFormMessage({ kind: "error", text: data.error ||
 
-                    data.error ||
-
-                    "The order could not be created."
-
-                );
+                    "The order could not be created." });
 
                 return;
 
@@ -243,7 +243,7 @@ function Orders() {
 
             if (data.warnings.length > 0) {
 
-                alert(data.warnings.join("\n"));
+                setFormMessage({ kind: "warning", text: data.warnings.join(" ") });
 
             }
 
@@ -261,11 +261,7 @@ function Orders() {
 
 
 
-            alert(
-
-                "Something went wrong while creating the order."
-
-            );
+            setFormMessage({ kind: "error", text: "Something went wrong while creating the order." });
 
         } finally {
             setIsSubmitting(false);
@@ -276,6 +272,7 @@ function Orders() {
 
 
     async function completeOrder(orderId: number) {
+        setFormMessage(null);
 
         try {
 
@@ -299,13 +296,9 @@ function Orders() {
 
             if (!response.ok) {
 
-                alert(
+                setFormMessage({ kind: "error", text: data.error ||
 
-                    data.error ||
-
-                    "The order could not be completed."
-
-                );
+                    "The order could not be completed." });
 
                 return;
 
@@ -341,11 +334,7 @@ function Orders() {
 
 
 
-            alert(
-
-                "Something went wrong while completing the order."
-
-            );
+            setFormMessage({ kind: "error", text: "Something went wrong while completing the order." });
 
         }
 
@@ -747,6 +736,19 @@ function Orders() {
 
 
 
+                        {/* Order problems in red; low-stock warnings in the softer pink used for production alerts */}
+                        {formMessage && (
+                            <p
+                                className={
+                                    formMessage.kind === "error"
+                                        ? "rounded-2xl bg-red-100 px-4 py-3 text-sm text-red-700"
+                                        : "rounded-2xl border border-pink-100 bg-pink-50 px-4 py-3 text-sm text-stone-600"
+                                }
+                            >
+                                {formMessage.text}
+                            </p>
+                        )}
+
                         <button
                             type="button"
                             onClick={createOrder}
@@ -809,6 +811,12 @@ function Orders() {
 
 
 
+
+                    {orders.length === 0 && (
+                        <p className="px-6 py-6 text-sm text-stone-400">
+                            No orders yet today.
+                        </p>
+                    )}
 
                     {orders.map((order) => (
 

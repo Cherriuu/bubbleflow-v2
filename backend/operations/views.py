@@ -2,7 +2,7 @@
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -15,6 +15,7 @@ from .models import (
     PreparedItem,
     StorageLocation,
     Batch,
+    BatchStatus,
     MenuItem,
     Order,
     OrderStatus,
@@ -120,14 +121,33 @@ def storage_locations(request):
     return Response(serializer.data)
 
 
+# Get the shop's current batches. Add ?include_history=true to also get old depleted and expired ones.
 @api_view(["GET"])
 def batches(request):
+    shop = request.user.shop
+
+    # Only preparing and ready batches can change status with time (finish preparing, or expire)
+    for batch in Batch.objects.filter(
+        prepared_item__shop=shop,
+        status__in=[BatchStatus.PREPARING, BatchStatus.READY]
+    ).select_related("prepared_item"):
+        update_batch_status(batch)
+
     batches = Batch.objects.filter(
-        prepared_item__shop=request.user.shop
+        prepared_item__shop=shop
     )
 
-    for batch in batches:
-        update_batch_status(batch)
+    # By default skip used-up history: keep batches in progress or ready, plus ones that expired in the last day
+    if request.query_params.get("include_history") != "true":
+        batches = batches.filter(
+            Q(status__in=[BatchStatus.PREPARING, BatchStatus.COOLING, BatchStatus.READY])
+            | Q(status=BatchStatus.EXPIRED, expires_at__gte=timezone.now() - timedelta(hours=24))
+        )
+
+    # Add up every batch's events in the same query, instead of one balance query per batch
+    batches = batches.annotate(
+        annotated_balance=Sum("inventory_events__quantity_delta")
+    )
 
     serializer = BatchSerializer(
         batches,

@@ -15,6 +15,7 @@ from rest_framework.throttling import AnonRateThrottle
 
 from .models import LocationType, Shop, StorageLocation
 from .serializers import RegisterSerializer, LoginSerializer
+from .services.demo import refresh_demo_shop
 
 
 DEMO_EMAIL = "demo@bubbleflow.app"
@@ -162,6 +163,9 @@ def demo_login_view(request):
             {"error": "The demo is not available right now."},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # Restock the demo and catch its order history up to now, since the site may not have been deployed for days
+    refresh_demo_shop(user.shop)
 
     login(request, user)
 
