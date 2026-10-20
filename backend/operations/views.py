@@ -2,7 +2,7 @@
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -18,6 +18,7 @@ from .models import (
     BatchStatus,
     MenuItem,
     Order,
+    OrderItemTopping,
     OrderStatus,
 )
 
@@ -191,8 +192,12 @@ def orders(request):
         Q(created_at__gte=day_start, created_at__lt=day_end) | Q(status=OrderStatus.PENDING),
         shop=shop
     ).prefetch_related(
-        # Load every order's items and their toppings in two extra queries, instead of one query per order and per item
-        "order_items__toppings"
+        # Load every order's items and their toppings in two extra queries, instead of one query per order and per item.
+        # The toppings query also joins in each topping's ingredient, for its name.
+        Prefetch(
+            "order_items__toppings",
+            queryset=OrderItemTopping.objects.select_related("prepared_item")
+        )
     ).order_by(
         "-created_at",
         "-id"

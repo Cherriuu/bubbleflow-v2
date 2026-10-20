@@ -154,11 +154,18 @@ class RecipeComponentSerializer(serializers.ModelSerializer):
 
 # Toppings attached to a customized order item
 class OrderItemToppingSerializer(serializers.ModelSerializer):
+    # The ingredient's name, so pages can show "+1 Tapioca Pearls" without looking it up
+    prepared_item_name = serializers.CharField(
+        source="prepared_item.name",
+        read_only=True
+    )
+
     class Meta:
         model = OrderItemTopping
         fields = [
             "id",
             "prepared_item",
+            "prepared_item_name",
             "quantity",
         ]
 

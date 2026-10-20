@@ -16,6 +16,9 @@ function Inventory() {
 
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
+    {/* How many batches are ready to serve right now; one item can have more than one */}
+    const [readyBatchesCount, setReadyBatchesCount] = useState(0);
+
     
     useEffect(() => {
         async function getInventory() {
@@ -27,16 +30,24 @@ function Inventory() {
             setInventory(data);
         }
 
+        {/* The batches list marks expired batches first, so "ready" here means ready and unexpired */}
+        async function getReadyBatchesCount() {
+            const response = await apiFetch(
+                "/api/batches/"
+            );
+
+            const data: { status: string }[] = await response.json();
+            setReadyBatchesCount(data.filter((batch) => batch.status === "ready").length);
+        }
+
         getInventory();
+        getReadyBatchesCount();
     }, []);
 
     const lowStockCount = inventory.filter(
         (item) => item.status === "low" || item.status === "out"
     ).length;
 
-    const readyBatchesCount = inventory.filter(
-        (item) => item.status === "available" || item.status === "low"
-    )
 
     return (
         <div className="w-full px-8 py-8">
@@ -84,7 +95,7 @@ function Inventory() {
                     </p>
 
                     <p className="mt-2 text-3xl font-bold text-stone-800">
-                        {readyBatchesCount.length}
+                        {readyBatchesCount}
                     </p>
                 </div>
 

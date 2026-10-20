@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api/client";
+import { formatIce, formatSugar, formatToppings } from "../utils/order_labels";
 
 {/* Define the types for the data */}
 
 type Topping = {
     id: number;
     prepared_item: number;
+    prepared_item_name: string;
     quantity: string;
 };
 
@@ -870,9 +872,15 @@ function Orders() {
 
                                             <p className="mt-1 text-xs text-stone-400">
 
-                                                Quantity: {item.quantity} - Sugar: {item.sugar_level}, Ice: {item.ice_level}
+                                                Quantity: {item.quantity} - {formatSugar(item.sugar_level)}, {formatIce(item.ice_level)}
 
                                             </p>
+
+                                            {item.toppings.length > 0 && (
+                                                <p className="mt-1 text-xs text-stone-400">
+                                                    {formatToppings(item.toppings).join(", ")}
+                                                </p>
+                                            )}
 
                                         </div>
 

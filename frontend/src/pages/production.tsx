@@ -92,9 +92,10 @@ function Production() {
     ).length;
 
 
-    const availableCount = inventory.filter(
-        (item) =>
-            item.status === "available"
+    {/* Items with nothing to prepare, so this and "Items to prepare" add up to every prepared item */}
+    const availableCount = recommendations.filter(
+        (recommendation) =>
+            Number(recommendation.recommended_quantity) <= 0
     ).length;
 
 

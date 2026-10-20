@@ -1116,6 +1116,33 @@ class OrdersListTests(APITestCase):
         # Newest first, so the order from three days ago comes last
         self.assertEqual(ids, [completed_today.id, self.data["order"].id, pending_earlier.id])
 
+    def test_order_items_include_topping_names(self):
+        order = self.make_order(OrderStatus.COMPLETED)
+        order_item = OrderItem.objects.create(order=order, menu_item=self.data["menu_item"])
+
+        for name in ["Tapioca Pearls", "Grass Jelly"]:
+            topping = PreparedItem.objects.create(
+                shop=self.data["shop"],
+                name=name,
+                base_unit=Unit.GRAM,
+                default_batch_quantity=Decimal("2000"),
+                quantity_per_serving=Decimal("60"),
+                preparation_time=timedelta(minutes=45),
+                default_shelf_life=timedelta(hours=4),
+                is_topping=True
+            )
+            OrderItemTopping.objects.create(order_item=order_item, prepared_item=topping, quantity=Decimal("2"))
+
+        response = self.client.get("/api/orders/")
+
+        row = next(row for row in response.data if row["id"] == order.id)
+        toppings = row["order_items"][0]["toppings"]
+
+        self.assertEqual(
+            sorted((topping["prepared_item_name"], topping["quantity"]) for topping in toppings),
+            [("Grass Jelly", "2.000"), ("Tapioca Pearls", "2.000")]
+        )
+
     def test_query_count_does_not_grow_with_orders(self):
         pearls = PreparedItem.objects.create(
             shop=self.data["shop"],
