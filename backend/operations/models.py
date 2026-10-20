@@ -22,7 +22,8 @@ class Shop(models.Model):
         help_text="Percentage of buffer stock to account for unexpected usage or spoilage",
         default=Decimal("10.00")
     )
-    low_stock_threshold_servings = models.PositiveIntegerField(default=15)
+    # A full tea batch is about 8 servings, so warn when fewer than 3 are left
+    low_stock_threshold_servings = models.PositiveIntegerField(default=3)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

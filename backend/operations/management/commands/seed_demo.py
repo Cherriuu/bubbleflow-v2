@@ -71,7 +71,7 @@ class Command(BaseCommand):
         shop.owner = demo_user
         shop.timezone = "America/New_York"
         shop.inventory_buffer_percent = Decimal("10.00")
-        shop.low_stock_threshold_servings = 15
+        shop.low_stock_threshold_servings = 3
         shop.save()
 
         self.stdout.write("Seeded shop")
